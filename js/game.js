@@ -1,10 +1,41 @@
 // Pelham Acres — game state and rules. All timers are wall-clock timestamps,
 // so progress continues while the app is closed.
-import { CROPS, CROP_YIELD, ANIMALS, RECIPES, BUILD, VALUE, MAP, MATS, DECOR_CHARM_CAP, xpFor } from './data.js';
+import { CROPS, CROP_YIELD, ANIMALS, RECIPES, BUILD, VALUE, MAP, MATS, DECOR_CHARM_CAP, xpFor, MASTERY, MAX_BLVL, upgradeCost, NO_ORDER } from './data.js';
 
 export let S = null;
 export const now = () => Date.now();
-export const hooks = { onLevel: null };
+export const hooks = { onLevel: null, onMastery: null, onStat: null };
+
+// ---------- Stats (used by quests) ----------
+export function stat(k, n = 1) { S.stats = S.stats || {}; S.stats[k] = (S.stats[k] || 0) + n; hooks.onStat && hooks.onStat(k); }
+export const getStat = k => (S.stats && S.stats[k]) || 0;
+
+// ---------- Building levels & mastery ----------
+export const blvl = o => o.lvl || 1;
+const speedOf = o => 1 - 0.08 * (blvl(o) - 1);
+export const masteryCount = (kind, id) => (S.mastery && S.mastery[kind + ':' + id]) || 0;
+export const stars = (kind, id) => MASTERY[kind].filter(t => masteryCount(kind, id) >= t).length;
+export const masteryTime = (kind, id) => { const s = stars(kind, id); return s >= 3 ? 0.8 : s >= 1 ? 0.9 : 1; };
+const masteryBonus = (kind, id) => stars(kind, id) >= 2 && Math.random() < 0.2;
+function addMastery(kind, id) {
+  S.mastery = S.mastery || {};
+  const before = stars(kind, id);
+  S.mastery[kind + ':' + id] = masteryCount(kind, id) + 1;
+  const after = stars(kind, id);
+  if (after > before) { S.coins += after * 40; S.hg += 1; hooks.onMastery && hooks.onMastery(kind, id, after); }
+}
+export const canUpgrade = o => ['producer', 'pen', 'house'].includes(BUILD[o.t].kind);
+export function nextUpgradeCost(o) { return blvl(o) >= MAX_BLVL ? null : upgradeCost(BUILD[o.t], blvl(o)); }
+export function upgradeBuilding(o) {
+  const c = nextUpgradeCost(o); if (!c) return 'max';
+  const mats = {}; for (const k of ['wood', 'stone', 'planks', 'nails']) if (c[k]) mats[k] = c[k];
+  if (S.coins < c.coins || !hasAll(mats)) return 'cost';
+  S.coins -= c.coins; takeAll(mats); o.lvl = blvl(o) + 1; stat('upgrade');
+  addXP(5 * o.lvl);
+  return 'ok';
+}
+export const rentOf = o => Math.round(BUILD[o.t].rent * (1 + 0.25 * (blvl(o) - 1)));
+export const penCap = o => BUILD[o.t].cap + blvl(o) - 1;
 const KEY = 'pelhamAcres.save.v1';
 
 // ---------- Grid ----------
@@ -85,6 +116,7 @@ export function pay(t) {
   const b = BUILD[t];
   S.coins -= b.cost(count(t));
   if (b.mats) takeAll(b.mats);
+  stat('build'); stat('build:' + t);
 }
 
 // ---------- Fields ----------
@@ -95,20 +127,33 @@ export function plant(o, c) {
   if (S.level < cr.lvl) return 'locked';
   if (S.coins < cr.cost) return 'coins';
   S.coins -= cr.cost;
-  o.crop = c; o.start = now(); o.end = now() + cr.time * 1000;
+  o.crop = c; o.start = now(); o.end = now() + cr.time * 1000 * masteryTime('crop', c);
+  stat('plant');
   return 'ok';
 }
+// returns { crop, n } on success, 'full' if the barn is full, or null if not ready
 export function harvest(o) {
   if (!fieldReady(o)) return null;
   const c = o.crop;
-  if (!addItem(c, CROP_YIELD)) return 'full';
+  const n = CROP_YIELD + (masteryBonus('crop', c) ? 1 : 0);
+  if (!addItem(c, n)) return 'full';
   o.crop = null;
   addXP(CROPS[c].xp);
-  return c;
+  addMastery('crop', c);
+  stat('harvest'); stat('harvest:' + c, n);
+  return { crop: c, n };
+}
+export function fertilize(o) {
+  if (!o.crop || o.end <= now()) return 'notgrowing';
+  if (have('fertilizer') < 1) return 'none';
+  takeAll({ fertilizer: 1 });
+  o.end = now() + (o.end - now()) * 0.3;
+  return 'ok';
 }
 
 // ---------- Producers ----------
-export const slots = o => 3 + (o.extraSlots || 0);
+export const slots = o => 3 + blvl(o) - 1 + (o.extraSlots || 0);
+export const recipeTime = (o, r) => r.time * speedOf(o) * masteryTime('recipe', r.out);
 export function queueJob(o, ri) {
   const r = RECIPES[o.t][ri];
   if (S.level < r.lvl) return 'locked';
@@ -117,7 +162,7 @@ export function queueJob(o, ri) {
   takeAll(r.in);
   const last = o.jobs.length ? o.jobs[o.jobs.length - 1].end : 0;
   const start = Math.max(last, now());
-  o.jobs.push({ out: r.out, n: r.n, xp: r.xp, start, end: start + r.time * 1000 });
+  o.jobs.push({ out: r.out, n: r.n, xp: r.xp, start, end: start + recipeTime(o, r) * 1000 });
   return 'ok';
 }
 export const jobsDone = o => o.jobs.filter(j => j.end <= now()).length;
@@ -125,10 +170,13 @@ export function collectJobs(o) {
   const got = [];
   while (o.jobs.length && o.jobs[0].end <= now()) {
     const j = o.jobs[0];
-    if (!addItem(j.out, j.n)) return { got, full: true };
+    const n = j.n * (masteryBonus('recipe', j.out) ? 2 : 1);
+    if (!addItem(j.out, n)) return { got, full: true };
     o.jobs.shift();
     addXP(j.xp);
-    got.push(j);
+    addMastery('recipe', j.out);
+    stat('make'); stat('make:' + j.out, n);
+    got.push({ ...j, n });
   }
   return { got, full: false };
 }
@@ -137,19 +185,21 @@ export function collectJobs(o) {
 export const penAnimal = o => ANIMALS[BUILD[o.t].animal];
 export const animalCost = o => Math.round(penAnimal(o).cost * (1 + o.animals.length * 0.5));
 export function buyAnimal(o) {
-  if (o.animals.length >= BUILD[o.t].cap) return 'full';
+  if (o.animals.length >= penCap(o)) return 'full';
   const c = animalCost(o);
   if (S.coins < c) return 'coins';
   S.coins -= c;
   o.animals.push({ end: 0 });
+  stat('animal:' + BUILD[o.t].animal);
   return 'ok';
 }
 export const animalState = an => an.end === 0 ? 'hungry' : (an.end <= now() ? 'ready' : 'busy');
 export function feedAll(o) {
   const a = penAnimal(o); let fed = 0;
   for (const an of o.animals) {
-    if (an.end === 0 && have(a.feed) > 0) { takeAll({ [a.feed]: 1 }); an.end = now() + a.time * 1000; fed++; }
+    if (an.end === 0 && have(a.feed) > 0) { takeAll({ [a.feed]: 1 }); an.end = now() + a.time * 1000 * speedOf(o); fed++; }
   }
+  if (fed) stat('feed', fed);
   return fed;
 }
 export function collectAnimals(o) {
@@ -160,6 +210,7 @@ export function collectAnimals(o) {
       an.end = 0; got++; addXP(a.xp);
     }
   }
+  if (got) { stat('make:' + a.product, got); stat('animalGoods', got); }
   return { got, full };
 }
 
@@ -171,19 +222,27 @@ export function rentDue(o) {
 }
 export function collectRent(o) {
   const p = rentDue(o); if (!p) return 0;
-  const b = BUILD[o.t];
-  S.coins += p * b.rent;
+  const b = BUILD[o.t], amt = p * rentOf(o);
+  S.coins += amt;
   o.last = p >= RENT_CAP ? now() : o.last + p * b.period * 1000;
   addXP(p);
-  return p * b.rent;
+  stat('rent', amt);
+  return amt;
 }
 
 // ---------- Obstacles ----------
 export const clearCost = o => Math.round(BUILD[o.t].clear * (1 + (S.cleared || 0) * 0.03));
-export function clearObstacle(o) {
+export const toolFor = o => o.t === 'tree' ? 'axe' : 'pickaxe';
+export function clearObstacle(o, useTool) {
   const b = BUILD[o.t], c = clearCost(o);
-  if (S.coins < c) return { err: 'coins' };
-  S.coins -= c;
+  if (useTool) {
+    if (have(toolFor(o)) < 1) return { err: 'tool' };
+    takeAll({ [toolFor(o)]: 1 });
+  } else {
+    if (S.coins < c) return { err: 'coins' };
+    S.coins -= c;
+  }
+  stat('clear');
   S.objs.splice(S.objs.indexOf(o), 1);
   S.cleared = (S.cleared || 0) + 1;
   rebuildGrid();
@@ -226,7 +285,7 @@ function obtainable() {
   for (const c in CROPS) if (CROPS[c].lvl <= S.level) set.add(c);
   for (const o of S.objs) {
     const b = BUILD[o.t];
-    if (b.kind === 'producer') for (const r of RECIPES[o.t]) if (r.lvl <= S.level && !/Feed$/.test(r.out)) set.add(r.out);
+    if (b.kind === 'producer') for (const r of RECIPES[o.t]) if (r.lvl <= S.level && !NO_ORDER.has(r.out)) set.add(r.out);
     if (b.kind === 'pen' && o.animals.length) set.add(penAnimal(o).product);
   }
   return [...set];
@@ -263,6 +322,7 @@ export function deliver(i) {
   addXP(o.xp);
   S.orders[i] = { wait: now() + 15000 };
   S.delivered = (S.delivered || 0) + 1;
+  stat('deliver'); stat('orderCoins', o.coins);
   let bonus = false;
   if (S.delivered % 5 === 0) { S.hg += 1; bonus = true; }
   return { ...o, bonus };
@@ -292,7 +352,7 @@ export function useHourglass(o) {
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 export function newGame() {
-  S = { v: 1, town: 'Pelham Acres', coins: 150, xp: 0, level: 1, hg: 3, inv: { wheat: 4, corn: 2 }, barnLvl: 1,
+  S = { v: 1, town: 'Pelham Acres', coins: 200, xp: 0, level: 1, hg: 3, inv: { wheat: 4, corn: 2 }, barnLvl: 1,
         objs: [], nextId: 1, orders: [], cleared: 0, delivered: 0, created: now(), saved: now(),
         settings: { music: true, sfx: true } };
   addObj('barn', 11, 10, true);

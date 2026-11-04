@@ -6,19 +6,19 @@ export const TW = 64, TH = 32, MAP = 30;
 export const CROPS = {
   wheat:      { name: 'Wheat',        time: 20,  cost: 1,  sell: 3,  xp: 1,  lvl: 1,  color: '#E8B84A', icon: '🌾' },
   corn:       { name: 'Corn',         time: 45,  cost: 2,  sell: 5,  xp: 1,  lvl: 1,  color: '#F2D33C', icon: '🌽' },
-  carrot:     { name: 'Carrot',       time: 60,  cost: 3,  sell: 7,  xp: 2,  lvl: 2,  color: '#EE7A2A', icon: '🥕' },
-  soybean:    { name: 'Soybean',      time: 90,  cost: 4,  sell: 9,  xp: 2,  lvl: 3,  color: '#9BBF4A', icon: '🫘' },
-  sugarcane:  { name: 'Sugarcane',    time: 120, cost: 5,  sell: 11, xp: 3,  lvl: 4,  color: '#7FBF6A', icon: '🎋' },
-  potato:     { name: 'Potato',       time: 150, cost: 6,  sell: 13, xp: 3,  lvl: 5,  color: '#C9A26B', icon: '🥔' },
-  tomato:     { name: 'Tomato',       time: 180, cost: 7,  sell: 15, xp: 4,  lvl: 6,  color: '#E2483A', icon: '🍅' },
-  strawberry: { name: 'Strawberry',   time: 240, cost: 9,  sell: 19, xp: 5,  lvl: 7,  color: '#E23B5A', icon: '🍓' },
-  pumpkin:    { name: 'Pumpkin',      time: 300, cost: 11, sell: 23, xp: 6,  lvl: 8,  color: '#F28C28', icon: '🎃' },
-  cotton:     { name: 'Cotton',       time: 360, cost: 12, sell: 26, xp: 6,  lvl: 9,  color: '#F4F1EA', icon: '🤍' },
-  sunflower:  { name: 'Sunflower',    time: 420, cost: 14, sell: 29, xp: 7,  lvl: 10, color: '#F7C531', icon: '🌻' },
-  blueberry:  { name: 'Blueberry',    time: 480, cost: 16, sell: 33, xp: 8,  lvl: 11, color: '#4C5FD0', icon: '🫐' },
-  lavender:   { name: 'Lavender',     time: 540, cost: 18, sell: 37, xp: 9,  lvl: 12, color: '#A57FD8', icon: '🪻' },
-  coffee:     { name: 'Coffee Beans', time: 600, cost: 20, sell: 41, xp: 10, lvl: 13, color: '#7A4B2A', icon: '🫛' },
-  cocoa:      { name: 'Cocoa Pods',   time: 720, cost: 24, sell: 47, xp: 11, lvl: 14, color: '#5B3A22', icon: '🌰' },
+  carrot:     { name: 'Carrot',       time: 60,  cost: 3,  sell: 7,  xp: 2,  lvl: 1,  color: '#EE7A2A', icon: '🥕' },
+  soybean:    { name: 'Soybean',      time: 90,  cost: 4,  sell: 9,  xp: 2,  lvl: 2,  color: '#9BBF4A', icon: '🫘' },
+  sugarcane:  { name: 'Sugarcane',    time: 120, cost: 5,  sell: 11, xp: 3,  lvl: 3,  color: '#7FBF6A', icon: '🎋' },
+  potato:     { name: 'Potato',       time: 150, cost: 6,  sell: 13, xp: 3,  lvl: 4,  color: '#C9A26B', icon: '🥔' },
+  tomato:     { name: 'Tomato',       time: 180, cost: 7,  sell: 15, xp: 4,  lvl: 5,  color: '#E2483A', icon: '🍅' },
+  strawberry: { name: 'Strawberry',   time: 240, cost: 9,  sell: 19, xp: 5,  lvl: 6,  color: '#E23B5A', icon: '🍓' },
+  pumpkin:    { name: 'Pumpkin',      time: 300, cost: 11, sell: 23, xp: 6,  lvl: 7,  color: '#F28C28', icon: '🎃' },
+  cotton:     { name: 'Cotton',       time: 360, cost: 12, sell: 26, xp: 6,  lvl: 8,  color: '#F4F1EA', icon: '🤍' },
+  sunflower:  { name: 'Sunflower',    time: 420, cost: 14, sell: 29, xp: 7,  lvl: 9,  color: '#F7C531', icon: '🌻' },
+  blueberry:  { name: 'Blueberry',    time: 480, cost: 16, sell: 33, xp: 8,  lvl: 10, color: '#4C5FD0', icon: '🫐' },
+  lavender:   { name: 'Lavender',     time: 540, cost: 18, sell: 37, xp: 9,  lvl: 11, color: '#A57FD8', icon: '🪻' },
+  coffee:     { name: 'Coffee Beans', time: 600, cost: 20, sell: 41, xp: 10, lvl: 12, color: '#7A4B2A', icon: '🫛' },
+  cocoa:      { name: 'Cocoa Pods',   time: 720, cost: 24, sell: 47, xp: 11, lvl: 13, color: '#5B3A22', icon: '🌰' },
 };
 export const CROP_YIELD = 2;
 
@@ -62,53 +62,77 @@ export const PRODUCTS = {
   pancakes:    { name: 'Pancakes',     icon: '🥞' },
   wood:        { name: 'Wood',         icon: '🪵' },
   stone:       { name: 'Stone',        icon: '🪨' },
+  planks:      { name: 'Planks',       icon: '🟫' },
+  nails:       { name: 'Nails',        icon: '📌' },
+  axe:         { name: 'Axe',          icon: '🪓' },
+  pickaxe:     { name: 'Pickaxe',      icon: '⛏️' },
+  fertilizer:  { name: 'Fertilizer',   icon: '🧴' },
 };
-// Materials don't take barn space.
-export const MATS = new Set(['wood', 'stone']);
+// Materials and tools are kept in the toolshed, so they don't take barn space.
+export const MATS = new Set(['wood', 'stone', 'planks', 'nails', 'axe', 'pickaxe']);
+
+// ---------- Upgrades & mastery ----------
+export const MAX_BLVL = 5;
+export function upgradeCost(b, lvl) {
+  const base = Math.max(60, b.cost(0));
+  return { coins: Math.round(base * 0.6 * lvl + 50 * lvl), planks: lvl >= 2 ? lvl * 2 : 0, nails: lvl >= 3 ? lvl * 2 : 0, wood: 3 * lvl, stone: 2 * lvl };
+}
+// Crop mastery: harvests needed per star. Recipe mastery: batches made per star.
+export const MASTERY = { crop: [25, 100, 300], recipe: [12, 50, 150] };
+export const MASTERY_PERKS = ['10% faster', '+20% chance of a bonus', '20% faster in total'];
 
 // ---------- Recipes per production building ----------
 export const RECIPES = {
   feedMill: [
     { out: 'chickenFeed', n: 3, in: { wheat: 2, corn: 1 },               time: 20,  lvl: 1 },
     { out: 'cowFeed',     n: 3, in: { soybean: 2, corn: 1 },             time: 40,  lvl: 3 },
-    { out: 'sheepFeed',   n: 3, in: { wheat: 2, soybean: 1, carrot: 1 }, time: 50,  lvl: 7 },
+    { out: 'sheepFeed',   n: 3, in: { wheat: 2, soybean: 1, carrot: 1 }, time: 50,  lvl: 6 },
   ],
   bakery: [
     { out: 'bread',      in: { wheat: 3 },                                    time: 45,  lvl: 2 },
-    { out: 'cornbread',  in: { corn: 2, egg: 2 },                             time: 90,  lvl: 3 },
-    { out: 'cookies',    in: { wheat: 2, egg: 1, brownSugar: 1 },             time: 150, lvl: 5 },
-    { out: 'carrotCake', in: { carrot: 2, egg: 2, brownSugar: 1 },            time: 180, lvl: 6 },
-    { out: 'pumpkinPie', in: { pumpkin: 1, egg: 2, wheat: 2, brownSugar: 1 }, time: 240, lvl: 8 },
+    { out: 'cornbread',  in: { corn: 2, egg: 2 },                             time: 90,  lvl: 2 },
+    { out: 'cookies',    in: { wheat: 2, egg: 1, brownSugar: 1 },             time: 150, lvl: 4 },
+    { out: 'carrotCake', in: { carrot: 2, egg: 2, brownSugar: 1 },            time: 180, lvl: 5 },
+    { out: 'pumpkinPie', in: { pumpkin: 1, egg: 2, wheat: 2, brownSugar: 1 }, time: 240, lvl: 7 },
   ],
   dairy: [
     { out: 'cream',  in: { milk: 1 }, time: 60,  lvl: 4 },
-    { out: 'butter', in: { milk: 2 }, time: 90,  lvl: 5 },
-    { out: 'cheese', in: { milk: 3 }, time: 150, lvl: 6 },
+    { out: 'butter', in: { milk: 2 }, time: 90,  lvl: 4 },
+    { out: 'cheese', in: { milk: 3 }, time: 150, lvl: 5 },
   ],
   sugarMill: [
-    { out: 'brownSugar',   in: { sugarcane: 1 }, time: 45,  lvl: 5 },
-    { out: 'syrup',        in: { sugarcane: 2 }, time: 90,  lvl: 6 },
-    { out: 'sunflowerOil', in: { sunflower: 3 }, time: 120, lvl: 10 },
+    { out: 'brownSugar',   in: { sugarcane: 1 }, time: 45,  lvl: 4 },
+    { out: 'syrup',        in: { sugarcane: 2 }, time: 90,  lvl: 5 },
+    { out: 'sunflowerOil', in: { sunflower: 3 }, time: 120, lvl: 9 },
   ],
   kitchen: [
-    { out: 'tomatoSauce',   in: { tomato: 3 },                  time: 90,  lvl: 6 },
-    { out: 'potatoSoup',    in: { potato: 2, cream: 1 },        time: 120, lvl: 6 },
-    { out: 'strawberryJam', in: { strawberry: 3, brownSugar: 1 }, time: 120, lvl: 7 },
-    { out: 'blueberryJam',  in: { blueberry: 3, brownSugar: 1 },  time: 150, lvl: 11 },
+    { out: 'tomatoSauce',   in: { tomato: 3 },                    time: 90,  lvl: 5 },
+    { out: 'potatoSoup',    in: { potato: 2, cream: 1 },          time: 120, lvl: 5 },
+    { out: 'strawberryJam', in: { strawberry: 3, brownSugar: 1 }, time: 120, lvl: 6 },
+    { out: 'blueberryJam',  in: { blueberry: 3, brownSugar: 1 },  time: 150, lvl: 10 },
   ],
   loom: [
-    { out: 'yarn',           in: { wool: 2 },                      time: 120, lvl: 9 },
-    { out: 'cottonFabric',   in: { cotton: 3 },                    time: 150, lvl: 9 },
-    { out: 'sweater',        in: { yarn: 2 },                      time: 240, lvl: 10 },
-    { out: 'lavenderSachet', in: { lavender: 2, cottonFabric: 1 }, time: 200, lvl: 12 },
+    { out: 'yarn',           in: { wool: 2 },                      time: 120, lvl: 7 },
+    { out: 'cottonFabric',   in: { cotton: 3 },                    time: 150, lvl: 8 },
+    { out: 'sweater',        in: { yarn: 2 },                      time: 240, lvl: 8 },
+    { out: 'lavenderSachet', in: { lavender: 2, cottonFabric: 1 }, time: 200, lvl: 11 },
   ],
   cafe: [
-    { out: 'coffeeCup', in: { coffee: 2, milk: 1 },           time: 90,  lvl: 13 },
-    { out: 'pancakes',  in: { wheat: 2, egg: 2, syrup: 1 },   time: 120, lvl: 13 },
-    { out: 'hotCocoa',  in: { cocoa: 2, milk: 1 },            time: 120, lvl: 14 },
-    { out: 'mocha',     in: { coffee: 1, cocoa: 1, cream: 1 },time: 150, lvl: 14 },
+    { out: 'coffeeCup', in: { coffee: 2, milk: 1 },            time: 90,  lvl: 12 },
+    { out: 'pancakes',  in: { wheat: 2, egg: 2, syrup: 1 },    time: 120, lvl: 12 },
+    { out: 'hotCocoa',  in: { cocoa: 2, milk: 1 },             time: 120, lvl: 13 },
+    { out: 'mocha',     in: { coffee: 1, cocoa: 1, cream: 1 }, time: 150, lvl: 13 },
+  ],
+  workshop: [
+    { out: 'axe',        in: { wood: 2, stone: 1 },   time: 40, lvl: 3 },
+    { out: 'pickaxe',    in: { wood: 1, stone: 2 },   time: 40, lvl: 3 },
+    { out: 'fertilizer', n: 2, in: { wheat: 2, carrot: 2 }, time: 45, lvl: 3 },
+    { out: 'nails',      n: 2, in: { stone: 2 },      time: 60, lvl: 4 },
+    { out: 'planks',     n: 2, in: { wood: 3 },       time: 60, lvl: 4 },
   ],
 };
+// Items that orders never ask for (tools and building supplies)
+export const NO_ORDER = new Set(['chickenFeed', 'cowFeed', 'sheepFeed', 'axe', 'pickaxe', 'fertilizer', 'nails', 'planks']);
 for (const k in RECIPES) for (const r of RECIPES[k]) { r.n = r.n || 1; r.xp = Math.max(1, Math.round(r.time / 20)); }
 
 // ---------- Placeable things ----------
@@ -118,27 +142,28 @@ export const BUILD = {
   field:     { name: 'Field', cat: 'Farm', kind: 'field', w: 1, h: 1, lvl: 1, cost: n => 10 + n * 5, max: L => 6 + L * 2, icon: '🟫', desc: 'Plant crops here.' },
   barn:      { name: 'Barn', kind: 'storage', w: 2, h: 2, lvl: 999, cost: () => 0, max: one, wall: '#B8432F', roof: '#6E2A20', hgt: 36, icon: '📦', desc: 'Stores your crops and goods.' },
 
-  coop:      { name: 'Chicken Coop',  cat: 'Animals', kind: 'pen', animal: 'chicken', cap: 5, w: 2, h: 2, lvl: 2, cost: () => 60,  max: one, ground: '#CDB37A', wall: '#D9A066', roof: '#8E5B2E', icon: '🐔', desc: 'Chickens eat Chicken Feed and lay eggs.' },
-  cowshed:   { name: 'Cow Pasture',   cat: 'Animals', kind: 'pen', animal: 'cow',     cap: 5, w: 2, h: 2, lvl: 4, cost: () => 220, max: one, ground: '#A9CF6E', wall: '#E9E2D0', roof: '#5A4632', icon: '🐄', desc: 'Cows eat Cow Feed and give milk.' },
-  sheepfold: { name: 'Sheep Meadow',  cat: 'Animals', kind: 'pen', animal: 'sheep',   cap: 5, w: 2, h: 2, lvl: 8, cost: () => 450, max: one, ground: '#B8D98A', wall: '#C9B48F', roof: '#4E6B3A', icon: '🐑', desc: 'Sheep eat Sheep Feed and grow wool.' },
+  coop:      { name: 'Chicken Coop',  cat: 'Animals', kind: 'pen', animal: 'chicken', cap: 5, w: 2, h: 2, lvl: 1, cost: () => 40,  max: one, ground: '#CDB37A', wall: '#D9A066', roof: '#8E5B2E', icon: '🐔', desc: 'Chickens eat Chicken Feed and lay eggs.' },
+  cowshed:   { name: 'Cow Pasture',   cat: 'Animals', kind: 'pen', animal: 'cow',     cap: 5, w: 2, h: 2, lvl: 3, cost: () => 180, max: one, ground: '#A9CF6E', wall: '#E9E2D0', roof: '#5A4632', icon: '🐄', desc: 'Cows eat Cow Feed and give milk.' },
+  sheepfold: { name: 'Sheep Meadow',  cat: 'Animals', kind: 'pen', animal: 'sheep',   cap: 5, w: 2, h: 2, lvl: 6, cost: () => 400, max: one, ground: '#B8D98A', wall: '#C9B48F', roof: '#4E6B3A', icon: '🐑', desc: 'Sheep eat Sheep Feed and grow wool.' },
 
   feedMill:  { name: 'Feed Mill',        cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 1,  cost: () => 50,   max: one, wall: '#E3C16F', roof: '#6B8E23', hgt: 32, icon: '⚙️' },
-  bakery:    { name: 'Bakery',           cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 2,  cost: () => 90,   max: one, wall: '#F3D9B1', roof: '#B5523B', hgt: 30, icon: '🍞' },
-  dairy:     { name: 'Dairy',            cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 4,  cost: () => 260,  max: one, wall: '#F7F4EC', roof: '#3A6EA5', hgt: 30, icon: '🧀' },
-  sugarMill: { name: 'Sugar Mill',       cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 5,  cost: () => 320,  max: one, wall: '#E8E2D0', roof: '#9C6B3A', hgt: 34, icon: '🍬' },
-  kitchen:   { name: 'Preserve Kitchen', cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 6,  cost: () => 450,  max: one, wall: '#F6E7C8', roof: '#5E8B4A', hgt: 30, icon: '🫙' },
-  loom:      { name: 'Weaving Loom',     cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 9,  cost: () => 750,  max: one, wall: '#E9D8F4', roof: '#6C4A8E', hgt: 32, icon: '🧶' },
-  cafe:      { name: 'Corner Café',      cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 13, cost: () => 1300, max: one, wall: '#F2E0D0', roof: '#3B2A20', hgt: 32, icon: '☕' },
+  bakery:    { name: 'Bakery',           cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 2,  cost: () => 80,   max: one, wall: '#F3D9B1', roof: '#B5523B', hgt: 30, icon: '🍞' },
+  workshop:  { name: 'Workshop',         cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 3,  cost: () => 150,  max: one, wall: '#C9A27A', roof: '#4F4A44', hgt: 30, icon: '🔨' },
+  dairy:     { name: 'Dairy',            cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 4,  cost: () => 240,  max: one, wall: '#F7F4EC', roof: '#3A6EA5', hgt: 30, icon: '🧀' },
+  sugarMill: { name: 'Sugar Mill',       cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 4,  cost: () => 280,  max: one, wall: '#E8E2D0', roof: '#9C6B3A', hgt: 34, icon: '🍬' },
+  kitchen:   { name: 'Preserve Kitchen', cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 5,  cost: () => 400,  max: one, wall: '#F6E7C8', roof: '#5E8B4A', hgt: 30, icon: '🫙' },
+  loom:      { name: 'Weaving Loom',     cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 7,  cost: () => 700,  max: one, wall: '#E9D8F4', roof: '#6C4A8E', hgt: 32, icon: '🧶' },
+  cafe:      { name: 'Corner Café',      cat: 'Production', kind: 'producer', w: 2, h: 2, lvl: 12, cost: () => 1200, max: one, wall: '#F2E0D0', roof: '#3B2A20', hgt: 32, icon: '☕' },
 
-  cottage:   { name: 'Cottage',     cat: 'Town', kind: 'house', rent: 8,   period: 60,  w: 2, h: 2, lvl: 3,  cost: () => 120,  max: () => 4, wall: '#F4E3C1', roof: '#B04A3A', hgt: 28, icon: '🏠' },
-  farmhouse: { name: 'Farmhouse',   cat: 'Town', kind: 'house', rent: 20,  period: 90,  w: 2, h: 2, lvl: 6,  cost: () => 350,  max: () => 3, wall: '#E9D3A8', roof: '#46626F', hgt: 34, icon: '🏡' },
-  townhouse: { name: 'Townhouse',   cat: 'Town', kind: 'house', rent: 50,  period: 120, w: 2, h: 2, lvl: 10, cost: () => 900,  max: () => 3, wall: '#D8B4A0', roof: '#2F3E46', hgt: 46, icon: '🏘️' },
-  manor:     { name: 'Manor House', cat: 'Town', kind: 'house', rent: 140, period: 180, w: 3, h: 3, lvl: 14, cost: () => 2500, max: one,      wall: '#F1EDE2', roof: '#4E3B31', hgt: 50, icon: '🏰' },
-  townHall:     { name: 'Town Hall',     cat: 'Town', kind: 'civic', charm: 10, w: 3, h: 3, lvl: 5,  cost: () => 400,  mats: { wood: 8, stone: 8 },   max: one, wall: '#EDE3CF', roof: '#7A2E2E', hgt: 52, icon: '🏛️' },
-  generalStore: { name: 'General Store', cat: 'Town', kind: 'civic', charm: 6,  w: 2, h: 2, lvl: 7,  cost: () => 600,  mats: { wood: 12, stone: 4 },  max: one, wall: '#CFE3D4', roof: '#2E6B4F', hgt: 34, icon: '🏪' },
-  schoolhouse:  { name: 'Schoolhouse',   cat: 'Town', kind: 'civic', charm: 8,  w: 3, h: 2, lvl: 9,  cost: () => 900,  mats: { wood: 16, stone: 10 }, max: one, wall: '#C94C3C', roof: '#3E3A36', hgt: 38, icon: '🏫' },
-  clockTower:   { name: 'Clock Tower',   cat: 'Town', kind: 'civic', charm: 10, w: 2, h: 2, lvl: 11, cost: () => 1200, mats: { stone: 24 },           max: one, wall: '#D9CBB0', roof: '#4B4F5A', hgt: 84, icon: '🕰️' },
-  bandstand:    { name: 'Bandstand',     cat: 'Town', kind: 'civic', charm: 8,  w: 2, h: 2, lvl: 12, cost: () => 1500, mats: { wood: 24 },            max: one, wall: '#FFFFFF', roof: '#2F6E8E', hgt: 22, icon: '🎶' },
+  cottage:   { name: 'Cottage',     cat: 'Town', kind: 'house', rent: 8,   period: 60,  w: 2, h: 2, lvl: 2,  cost: () => 100,  max: () => 4, wall: '#F4E3C1', roof: '#B04A3A', hgt: 28, icon: '🏠' },
+  farmhouse: { name: 'Farmhouse',   cat: 'Town', kind: 'house', rent: 20,  period: 90,  w: 2, h: 2, lvl: 5,  cost: () => 320,  max: () => 3, wall: '#E9D3A8', roof: '#46626F', hgt: 34, icon: '🏡' },
+  townhouse: { name: 'Townhouse',   cat: 'Town', kind: 'house', rent: 50,  period: 120, w: 2, h: 2, lvl: 9,  cost: () => 850,  max: () => 3, wall: '#D8B4A0', roof: '#2F3E46', hgt: 46, icon: '🏘️' },
+  manor:     { name: 'Manor House', cat: 'Town', kind: 'house', rent: 140, period: 180, w: 3, h: 3, lvl: 13, cost: () => 2400, max: one,      wall: '#F1EDE2', roof: '#4E3B31', hgt: 50, icon: '🏰' },
+  townHall:     { name: 'Town Hall',     cat: 'Town', kind: 'civic', charm: 10, w: 3, h: 3, lvl: 4,  cost: () => 350,  mats: { wood: 8, stone: 8 },   max: one, wall: '#EDE3CF', roof: '#7A2E2E', hgt: 52, icon: '🏛️' },
+  generalStore: { name: 'General Store', cat: 'Town', kind: 'civic', charm: 6,  w: 2, h: 2, lvl: 6,  cost: () => 550,  mats: { planks: 6, nails: 4 },  max: one, wall: '#CFE3D4', roof: '#2E6B4F', hgt: 34, icon: '🏪' },
+  schoolhouse:  { name: 'Schoolhouse',   cat: 'Town', kind: 'civic', charm: 8,  w: 3, h: 2, lvl: 8,  cost: () => 850,  mats: { planks: 10, nails: 8 }, max: one, wall: '#C94C3C', roof: '#3E3A36', hgt: 38, icon: '🏫' },
+  clockTower:   { name: 'Clock Tower',   cat: 'Town', kind: 'civic', charm: 10, w: 2, h: 2, lvl: 10, cost: () => 1100, mats: { stone: 24, nails: 10 }, max: one, wall: '#D9CBB0', roof: '#4B4F5A', hgt: 84, icon: '🕰️' },
+  bandstand:    { name: 'Bandstand',     cat: 'Town', kind: 'civic', charm: 8,  w: 2, h: 2, lvl: 11, cost: () => 1400, mats: { planks: 16 },            max: one, wall: '#FFFFFF', roof: '#2F6E8E', hgt: 22, icon: '🎶' },
 
   path:    { name: 'Cobble Path', cat: 'Decor', kind: 'path',  w: 1, h: 1, lvl: 1, cost: () => 2,   max: inf, icon: '⬜' },
   fence:   { name: 'Fence',       cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 1, cost: () => 5,   max: inf, charm: 0, icon: '🚧' },
@@ -181,7 +206,7 @@ VALUE.wood = 6; VALUE.stone = 8;
   }
 }
 
-export const xpFor = L => Math.round(15 * Math.pow(L, 1.6) + 15);
+export const xpFor = L => Math.round(10 * Math.pow(L, 1.6) + 12);
 
 // What unlocks at a level (for the level-up screen and shop).
 export function unlocksAt(L) {

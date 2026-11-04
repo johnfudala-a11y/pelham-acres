@@ -1,8 +1,8 @@
 // Pelham Acres — input, menus, and the game loop.
-import { BUILD, CROPS, ITEMS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP } from './data.js';
+import { BUILD, CROPS, ITEMS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER } from './data.js';
 import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
-export const APP_VERSION = '0.3';
+export const APP_VERSION = '0.4';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -28,6 +28,24 @@ $('#modal').addEventListener('click', e => { const a = e.target.closest('[data-a
 
 const levelQueue = [];
 G.hooks.onLevel = L => { levelQueue.push(L); };
+G.hooks.onMastery = (kind, id, s) => {
+  setTimeout(() => { sfx.collect(); toast(`${'★'.repeat(s)} ${nm(id)} mastery! ${MASTERY_PERKS[s - 1]} · +${s * 40}🪙 +1⏳`); }, 400);
+};
+const starStr = (kind, id) => { const s = G.stars(kind, id); return `<span class="stars">${'★'.repeat(s)}${'☆'.repeat(3 - s)}</span>`; };
+function masteryLine(kind, id) {
+  const s = G.stars(kind, id), n = G.masteryCount(kind, id), th = MASTERY[kind];
+  return s >= 3 ? 'Mastered!' : `${n}/${th[s]} to next ★`;
+}
+function upgradeBlock(o) {
+  if (!G.canUpgrade(o)) return '';
+  const lv = G.blvl(o), c = G.nextUpgradeCost(o), b = BUILD[o.t];
+  const what = b.kind === 'producer' ? '+1 slot, 8% faster' : b.kind === 'pen' ? '+1 animal space, 8% faster' : '+25% rent';
+  if (!c) return `<div class="upg"><b>Level ${lv}</b> <span class="sub">· fully upgraded ✨</span></div>`;
+  const mats = ['wood', 'stone', 'planks', 'nails'].filter(k => c[k]).map(k => req(k, c[k])).join(' ');
+  return `<div class="upg"><div class="row"><b>Level ${lv}</b><span class="sub">→ ${lv + 1}: ${what}</span></div>
+    <div class="row" style="margin-top:6px"><span class="req ${G.S.coins >= c.coins ? 'ok' : 'no'}">🪙 ${fmtN(c.coins)}</span>${mats}
+    <button class="btn sm gold" data-act="upgrade">Upgrade</button></div></div>`;
+}
 function showLevelUps() {
   if (!levelQueue.length || !$('#modal').hidden) return;
   const L = levelQueue.shift();
@@ -170,9 +188,21 @@ function act(el) {
     case 'collectAnimals': collectPen(o); break;
     case 'collectRent': collectHouse(o); break;
     case 'move': startPlacing(o.t, o); return;
-    case 'clear': {
-      const r = G.clearObstacle(o);
-      if (r.err) { sfx.error(); toast('Not enough coins'); break; }
+    case 'upgrade': {
+      const r = G.upgradeBuilding(o);
+      if (r === 'ok') { sfx.build(); toast(`${BUILD[o.t].name} upgraded to level ${G.blvl(o)}!`); floater(o.x + 1, o.y + 1, `⬆ Lv ${G.blvl(o)}`, '#FFE9A8'); }
+      else { sfx.error(); toast(r === 'max' ? 'Already fully upgraded' : 'Need more coins or materials. Make planks and nails at the Workshop.'); }
+      break;
+    }
+    case 'fertilize': {
+      const r = G.fertilize(o);
+      if (r === 'ok') { sfx.hourglass(); floater(o.x + 0.5, o.y + 0.5, '🧴 growing fast!'); }
+      else { sfx.error(); toast(r === 'none' ? 'No fertilizer. Make some at the Workshop.' : 'Nothing growing here'); }
+      break;
+    }
+    case 'clear': case 'clearTool': {
+      const r = G.clearObstacle(o, d.act === 'clearTool');
+      if (r.err) { sfx.error(); toast(r.err === 'tool' ? `No ${nm(G.toolFor(o))}. Make one at the Workshop.` : 'Not enough coins'); break; }
       sfx.clear();
       floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${ic(r.drop.id)}` : '+2 XP');
       closeSheet(); break;
@@ -274,24 +304,27 @@ function harvestField(o) {
   const c = o.crop, r = G.harvest(o);
   if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
   if (r) sfx.harvest();
-  if (r) floater(o.x + 0.5, o.y + 0.5, `+${CROP_YIELD}${CROPS[c].icon}`);
+  if (r) floater(o.x + 0.5, o.y + 0.5, `+${r.n}${CROPS[c].icon}`, r.n > CROP_YIELD ? '#FFE9A8' : '#fff');
   return !!r;
 }
 
 // ---------- sheet contents ----------
 function cropPicker() {
-  return `<p class="sub">Pick a crop, then tap or drag across empty fields to plant it.</p><div class="grid">` +
+  return `<p class="sub">Pick a crop, then tap or drag across empty fields to plant it. Harvest crops to earn mastery stars.</p><div class="grid">` +
     Object.entries(CROPS).map(([k, c]) => {
       const locked = G.S.level < c.lvl;
       return `<div class="card ${locked ? 'locked' : ''}"><div class="big">${c.icon}</div><div class="nm">${c.name}</div>
-        <div class="meta">⏱ ${secs(c.time)} · 🪙 ${c.cost} · ×${CROP_YIELD}</div>
+        ${locked ? '' : starStr('crop', k)}
+        <div class="meta">⏱ ${secs(Math.round(c.time * G.masteryTime('crop', k)))} · 🪙 ${c.cost} · ×${CROP_YIELD}</div>
         ${locked ? `<div class="meta">🔒 Level ${c.lvl}</div>` : `<button class="btn sm" data-act="pickCrop" data-c="${k}">Plant</button>`}</div>`;
     }).join('') + '</div>';
 }
 function fieldInfo(o) {
   return `<p>${CROPS[o.crop].icon} Ready in <b data-end="${o.end}">${fmtT(o.end - now())}</b></p>
-    <div class="bar"><div data-bar data-s="${o.start}" data-e="${o.end}"></div></div><br>
-    <button class="btn gold" data-act="hgField">Use ⏳ hourglass (${G.S.hg})</button>`;
+    <div class="bar"><div data-bar data-s="${o.start}" data-e="${o.end}"></div></div>
+    <p class="sub">${CROPS[o.crop].name} mastery ${starStr('crop', o.crop)} · ${masteryLine('crop', o.crop)}</p>
+    <div class="row"><button class="btn" data-act="fertilize">🧴 Fertilize (${G.have('fertilizer')})</button>
+    <button class="btn gold" data-act="hgField">⏳ Finish now (${G.S.hg})</button></div>`;
 }
 function producerSheet(o) {
   const t = now(), n = G.slots(o);
@@ -311,11 +344,12 @@ function producerSheet(o) {
   RECIPES[o.t].forEach((r, i) => {
     const locked = G.S.level < r.lvl;
     html += `<div class="card ${locked ? 'locked' : ''}"><div class="big">${ic(r.out)}</div><div class="nm">${nm(r.out)}${r.n > 1 ? ' ×' + r.n : ''}</div>
-      <div class="meta">⏱ ${secs(r.time)} · worth ${VALUE[r.out]}🪙</div>
+      ${locked ? '' : starStr('recipe', r.out)}
+      <div class="meta">⏱ ${secs(Math.round(G.recipeTime(o, r)))}${NO_ORDER.has(r.out) ? '' : ` · worth ${VALUE[r.out]}🪙`}</div>
       ${locked ? `<div class="meta">🔒 Level ${r.lvl}</div>` : `<div class="row" style="justify-content:center">${reqs(r.in)}</div>
       <button class="btn sm ${G.hasAll(r.in) && o.jobs.length < n ? '' : 'off'}" data-act="make" data-i="${i}">Make</button>`}</div>`;
   });
-  return html + '</div>';
+  return html + '</div><h3>Upgrade</h3>' + upgradeBlock(o) + '<br><button class="btn alt sm" data-act="move">Move</button>';
 }
 function penSheet(o) {
   const b = BUILD[o.t], a = G.penAnimal(o), t = now();
@@ -326,22 +360,22 @@ function penSheet(o) {
     const st = G.animalState(an);
     html += `<div class="slot ${st === 'ready' ? 'done' : ''}">${a.icon}<small ${st === 'busy' ? `data-end="${an.end}"` : ''}>${st === 'hungry' ? 'hungry' : st === 'ready' ? 'ready!' : fmtT(an.end - t)}</small></div>`;
   });
-  for (let i = o.animals.length; i < b.cap; i++) html += '<div class="slot"><small>empty</small></div>';
+  for (let i = o.animals.length; i < G.penCap(o); i++) html += '<div class="slot"><small>empty</small></div>';
   html += `</div><div class="row">
     ${ready ? '<button class="btn" data-act="collectAnimals">Collect</button>' : ''}
     ${hungry ? `<button class="btn" data-act="feedAll">Feed ${hungry} (${req(a.feed, hungry)})</button>` : ''}
     ${o.animals.some(x => G.animalState(x) === 'busy') ? `<button class="btn gold sm" data-act="hg">⏳ Finish all (${G.S.hg})</button>` : ''}
-    ${o.animals.length < b.cap ? `<button class="btn alt" data-act="buyAnimal">Buy ${a.name} · ${G.animalCost(o)}🪙</button>` : ''}
+    ${o.animals.length < G.penCap(o) ? `<button class="btn alt" data-act="buyAnimal">Buy ${a.name} · ${G.animalCost(o)}🪙</button>` : ''}
     <span class="spacer"></span><button class="btn alt sm" data-act="move">Move</button></div>`;
   if (!o.animals.length) html += `<p class="sub" style="margin-top:12px">Buy your first ${a.name.toLowerCase()} to get started.</p>`;
-  return html;
+  return html + '<h3>Upgrade</h3>' + upgradeBlock(o);
 }
 function houseSheet(o) {
-  const b = BUILD[o.t], due = G.rentDue(o);
+  const b = BUILD[o.t], due = G.rentDue(o), rent = G.rentOf(o);
   const next = o.last + (due + 1) * b.period * 1000;
-  return `<p>Your neighbors pay <b>${b.rent} 🪙</b> rent every ${secs(b.period)} (holds up to ${G.RENT_CAP} payments).</p>
-    ${due ? `<button class="btn" data-act="collectRent">Collect ${due * b.rent} 🪙</button>` : `<p>Next rent in <b data-end="${next}">${fmtT(next - now())}</b></p>`}
-    <br><button class="btn alt sm" data-act="move">Move</button>`;
+  return `<p>Your neighbors pay <b>${rent} 🪙</b> rent every ${secs(b.period)} (holds up to ${G.RENT_CAP} payments).</p>
+    ${due ? `<button class="btn" data-act="collectRent">Collect ${due * rent} 🪙</button>` : `<p>Next rent in <b data-end="${next}">${fmtT(next - now())}</b></p>`}
+    <h3>Upgrade</h3>${upgradeBlock(o)}<br><button class="btn alt sm" data-act="move">Move</button>`;
 }
 function infoSheet(o) {
   const b = BUILD[o.t];
@@ -354,8 +388,11 @@ function infoSheet(o) {
 }
 function obstacleSheet(o) {
   const b = BUILD[o.t], c = G.clearCost(o);
+  const tool = G.toolFor(o), nt = G.have(tool);
   return `<p>Clearing this ${b.name.toLowerCase()} makes room to build. You'll probably find some ${ic(b.drop)} ${nm(b.drop)}.</p>
-    <button class="btn ${G.S.coins >= c ? '' : 'off'}" data-act="clear">Clear for ${c} 🪙</button>`;
+    <div class="row"><button class="btn ${nt ? '' : 'off'}" data-act="clearTool">Use ${ic(tool)} ${nm(tool)} (${nt})</button>
+    <button class="btn alt ${G.S.coins >= c ? '' : 'off'}" data-act="clear">Pay ${c} 🪙</button></div>
+    <p class="sub">${nm(tool)}s are made at the Workshop from wood and stone.</p>`;
 }
 function barnSheet() {
   const used = G.storageUsed(), cap = G.storageCap(), up = G.barnUpgradeCost();
@@ -403,11 +440,19 @@ function menuSheet() {
     <h3>Sound</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="music">Music: ${st.music ? 'On' : 'Off'}</button>
     <button class="btn alt sm" data-act="toggle" data-k="sfx">Sound effects: ${st.sfx ? 'On' : 'Off'}</button></div>
     <p class="sub">No sound? Turn the volume up and tap the map once. You can also tap 🔊 in the top corner.</p>
+    <h3>Mastery</h3>${masteryList()}
     <h3>Backup</h3><p class="sub">Cloud saves are coming. For now, copy this code to keep a backup, or paste one to restore.</p>
     <textarea id="saveText" placeholder="Save code"></textarea><div class="row" style="margin-top:8px">
     <button class="btn alt sm" data-act="export">Copy save code</button><button class="btn alt sm" data-act="import">Load pasted code</button></div>
     <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
     <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
+}
+function masteryList() {
+  const rows = [];
+  for (const k in CROPS) if (CROPS[k].lvl <= G.S.level) rows.push(['crop', k]);
+  for (const b in RECIPES) if (G.count(b)) for (const r of RECIPES[b]) if (r.lvl <= G.S.level) rows.push(['recipe', r.out]);
+  return `<p class="sub">Every ★: ${MASTERY_PERKS.map((p, i) => `${i + 1}★ ${p}`).join(' · ')}</p><div class="inv">` +
+    rows.map(([kind, id]) => `<div class="invrow"><span class="ic">${ic(id)}</span><div><div class="n">${nm(id)}</div><div class="nm">${starStr(kind, id)} ${masteryLine(kind, id)}</div></div></div>`).join('') + '</div>';
 }
 function exploreSheet() {
   return `<div style="font-size:48px;text-align:center">🗺️</div><p>Beyond the tree line lie the hills and hollows around Pelham Acres.

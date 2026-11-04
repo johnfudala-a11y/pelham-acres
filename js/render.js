@@ -349,6 +349,11 @@ function drawObj(o, t) {
     default:
       drawBox(o.x, o.y, b.w, b.h, b.hgt || 30, b.wall, b.roof, 18 + (b.w + b.h) * 3, b.icon);
       if (b.kind === 'civic') drawCivicExtras(o, b, t);
+      if ((o.lvl || 1) > 1) {
+        const [lx, ly] = P(o.x + b.w, o.y + b.h);
+        ctx.fillStyle = '#E9A825'; ctx.beginPath(); ctx.arc(lx - 8, ly - 10, 8, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.lvl, lx - 8, ly - 9.5);
+      }
   }
 }
 function drawGhostFootprint(g) {

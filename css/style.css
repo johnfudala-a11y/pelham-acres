@@ -95,6 +95,8 @@ h3 { font-size: 16px; margin: 16px 0 8px; }
 .order .who { font-weight: 800; }
 .order .rew { font-weight: 800; color: #8A5A10; }
 .spacer { flex: 1; }
+.stars { color: #E9A825; font-size: 14px; letter-spacing: 1px; }
+.upg { background: #FFF3D6; border: 2px solid #F0D9A0; border-radius: 14px; padding: 10px 12px; }
 
 .inv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .invrow { display: flex; align-items: center; gap: 8px; background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 6px 8px; }
