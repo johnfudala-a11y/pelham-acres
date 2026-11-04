@@ -72,7 +72,7 @@ function heightOf(o) {
   const b = BUILD[o.t];
   if (b.kind === 'obstacle') return o.t === 'tree' ? 52 : 22;
   if (b.kind === 'pen') return 36;
-  if (b.kind === 'decor') return o.t === 'lamp' ? 40 : 18;
+  if (b.kind === 'decor') return o.t === 'lamp' ? 40 : o.t === 'windmill' ? 100 : o.t === 'gazebo' ? 50 : o.t === 'fountain' ? 36 : 18;
   if (b.kind === 'field' || b.kind === 'path') return 0;
   return (b.hgt || 30) + 18 + (b.w + b.h) * 3;
 }
@@ -236,6 +236,33 @@ function drawDecor(o, b, t) {
       ctx.strokeStyle = '#2F3E46'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 34); ctx.stroke();
       const glow = 0.75 + Math.sin(t / 500 + o.id) * 0.2;
       ctx.fillStyle = `rgba(255,214,110,${glow})`; ctx.beginPath(); ctx.arc(cx, cy - 37, 6, 0, 7); ctx.fill();
+      break;
+    }
+    case 'gazebo': {
+      poly(diamond(o.x, o.y, 2, 2, 4), '#D9CBB0');
+      drawBox(o.x + 0.35, o.y + 0.35, 1.3, 1.3, 16, '#FFFFFF', '#5E8B4A', 22, null);
+      break;
+    }
+    case 'fountain': {
+      ctx.fillStyle = '#9A978F'; ctx.beginPath(); ctx.ellipse(cx, cy, 40, 19, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#5DA9D6'; ctx.beginPath(); ctx.ellipse(cx, cy - 2, 33, 14, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#B9B6AE'; ctx.fillRect(cx - 4, cy - 26, 8, 24);
+      ctx.fillStyle = '#9A978F'; ctx.beginPath(); ctx.ellipse(cx, cy - 26, 13, 5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(200,235,255,.9)';
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, k = ((t / 700 + i * 0.13) % 1); ctx.beginPath(); ctx.arc(cx + Math.cos(a) * 14 * k, cy - 30 + 26 * k * k - 10 * k, 1.8, 0, 7); ctx.fill(); }
+      break;
+    }
+    case 'windmill': {
+      drawBox(o.x + 0.5, o.y + 0.5, 1, 1, 56, '#E9E2D0', '#8E5B2E', 16, null);
+      const [hx, hy] = P(o.x + 1, o.y + 1.5); const by = hy - 60, a = t / 1500;
+      ctx.strokeStyle = '#6D4C30'; ctx.lineWidth = 3; ctx.fillStyle = 'rgba(250,245,230,.95)';
+      for (let i = 0; i < 4; i++) {
+        const ang = a + i * Math.PI / 2, ex = hx + Math.cos(ang) * 34, ey = by + Math.sin(ang) * 34;
+        ctx.beginPath(); ctx.moveTo(hx, by); ctx.lineTo(ex, ey); ctx.stroke();
+        const px2 = Math.cos(ang + Math.PI / 2) * 6, py2 = Math.sin(ang + Math.PI / 2) * 6;
+        poly([[hx + Math.cos(ang) * 10, by + Math.sin(ang) * 10], [ex, ey], [ex + px2, ey + py2], [hx + Math.cos(ang) * 10 + px2, by + Math.sin(ang) * 10 + py2]], 'rgba(250,245,230,.95)');
+      }
+      ctx.fillStyle = '#5A4632'; ctx.beginPath(); ctx.arc(hx, by, 4, 0, 7); ctx.fill();
       break;
     }
     case 'pond': {

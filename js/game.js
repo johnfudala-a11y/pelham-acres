@@ -37,7 +37,7 @@ export const canUpgrade = o => ['producer', 'pen', 'house'].includes(BUILD[o.t].
 export function nextUpgradeCost(o) { return blvl(o) >= MAX_BLVL ? null : upgradeCost(BUILD[o.t], blvl(o)); }
 export function upgradeBuilding(o) {
   const c = nextUpgradeCost(o); if (!c) return 'max';
-  const mats = {}; for (const k of ['wood', 'stone', 'planks', 'nails']) if (c[k]) mats[k] = c[k];
+  const mats = {}; for (const k of ['wood', 'stone', 'planks', 'nails', 'iron', 'gem']) if (c[k]) mats[k] = c[k];
   if (S.coins < c.coins || !hasAll(mats)) return 'cost';
   S.coins -= c.coins; takeAll(mats); o.lvl = blvl(o) + 1; stat('upgrade');
   addXP(5 * o.lvl);
@@ -115,6 +115,7 @@ export function addXP(n) {
 export function buyBlock(t) {
   const b = BUILD[t];
   if (S.level < b.lvl) return `Unlocks at level ${b.lvl}`;
+  if (b.needs && !(S.flags && S.flags[b.needs])) return b.needsText || 'Blueprint needed';
   const n = count(t);
   if (n >= b.max(S.level)) return t === 'field' ? 'Level up for more fields' : 'You have the maximum';
   if (S.coins < b.cost(n)) return 'Not enough coins';

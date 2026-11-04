@@ -67,16 +67,20 @@ export const PRODUCTS = {
   axe:         { name: 'Axe',          icon: '🪓' },
   pickaxe:     { name: 'Pickaxe',      icon: '⛏️' },
   fertilizer:  { name: 'Fertilizer',   icon: '🧴' },
+  iron:        { name: 'Iron Ore',     icon: '🔩' },
+  gem:         { name: 'Gemstone',     icon: '💎' },
 };
 // Materials and tools are kept in the toolshed, so they don't take barn space.
-export const MATS = new Set(['wood', 'stone', 'planks', 'nails', 'axe', 'pickaxe']);
+export const MATS = new Set(['wood', 'stone', 'planks', 'nails', 'axe', 'pickaxe', 'iron', 'gem']);
 
 // ---------- Upgrades & mastery ----------
 export const MAX_BLVL = 5;
 export function upgradeCost(b, lvl) {
   const base = Math.max(60, b.cost(0));
-  return { coins: Math.round(base * 0.6 * lvl + 50 * lvl), planks: lvl >= 2 ? lvl * 2 : 0, nails: lvl >= 3 ? lvl * 2 : 0, wood: 3 * lvl, stone: 2 * lvl };
+  return { coins: Math.round(base * 0.6 * lvl + 50 * lvl), planks: lvl >= 2 ? lvl * 2 : 0, nails: lvl >= 3 ? lvl * 2 : 0, wood: 3 * lvl, stone: 2 * lvl,
+           iron: lvl >= 3 ? lvl - 2 : 0, gem: lvl >= 4 ? 1 : 0 };
 }
+export const UPGRADE_MATS = ['wood', 'stone', 'planks', 'nails', 'iron', 'gem'];
 // Crop mastery: harvests needed per star. Recipe mastery: batches made per star.
 export const MASTERY = { crop: [25, 100, 300], recipe: [12, 50, 150] };
 export const MASTERY_PERKS = ['10% faster', '+20% chance of a bonus', '20% faster in total'];
@@ -162,7 +166,7 @@ export const BUILD = {
   townHall:     { name: 'Town Hall',     cat: 'Town', kind: 'civic', charm: 10, w: 3, h: 3, lvl: 4,  cost: () => 350,  mats: { wood: 8, stone: 8 },   max: one, wall: '#EDE3CF', roof: '#7A2E2E', hgt: 52, icon: '🏛️' },
   generalStore: { name: 'General Store', cat: 'Town', kind: 'civic', charm: 6,  w: 2, h: 2, lvl: 6,  cost: () => 550,  mats: { planks: 6, nails: 4 },  max: one, wall: '#CFE3D4', roof: '#2E6B4F', hgt: 34, icon: '🏪' },
   schoolhouse:  { name: 'Schoolhouse',   cat: 'Town', kind: 'civic', charm: 8,  w: 3, h: 2, lvl: 8,  cost: () => 850,  mats: { planks: 10, nails: 8 }, max: one, wall: '#C94C3C', roof: '#3E3A36', hgt: 38, icon: '🏫' },
-  clockTower:   { name: 'Clock Tower',   cat: 'Town', kind: 'civic', charm: 10, w: 2, h: 2, lvl: 10, cost: () => 1100, mats: { stone: 24, nails: 10 }, max: one, wall: '#D9CBB0', roof: '#4B4F5A', hgt: 84, icon: '🕰️' },
+  clockTower:   { name: 'Clock Tower',   cat: 'Town', kind: 'civic', charm: 10, w: 2, h: 2, lvl: 10, cost: () => 1100, mats: { stone: 24, nails: 10, iron: 4 }, max: one, wall: '#D9CBB0', roof: '#4B4F5A', hgt: 84, icon: '🕰️' },
   bandstand:    { name: 'Bandstand',     cat: 'Town', kind: 'civic', charm: 8,  w: 2, h: 2, lvl: 11, cost: () => 1400, mats: { planks: 16 },            max: one, wall: '#FFFFFF', roof: '#2F6E8E', hgt: 22, icon: '🎶' },
 
   station:      { name: 'Train Station', cat: 'Town', kind: 'station', w: 3, h: 2, lvl: 5, cost: () => 400, mats: { planks: 4, nails: 2 }, max: one, wall: '#B9573F', roof: '#3D4A57', hgt: 34, icon: '🚂', desc: 'Freight trains bring big contracts.' },
@@ -174,6 +178,9 @@ export const BUILD = {
   bench:   { name: 'Bench',       cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 4, cost: () => 30,  max: inf, charm: 1, icon: '🪑' },
   lamp:    { name: 'Lamp Post',   cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 5, cost: () => 35,  max: inf, charm: 1, icon: '🏮' },
   pond:    { name: 'Duck Pond',   cat: 'Decor', kind: 'decor', w: 2, h: 2, lvl: 6, cost: () => 150, max: inf, charm: 4, icon: '🦆' },
+  gazebo:  { name: 'Garden Gazebo', cat: 'Decor', kind: 'decor', w: 2, h: 2, lvl: 5,  cost: () => 300, mats: { planks: 6 },          max: one, charm: 6, icon: '⛲', needs: 'bp_gazebo',   needsText: 'Blueprint found in the Whispering Woods', wall: '#FFFFFF', roof: '#5E8B4A', hgt: 20 },
+  fountain:{ name: 'Town Fountain', cat: 'Decor', kind: 'decor', w: 2, h: 2, lvl: 8,  cost: () => 500, mats: { stone: 12, gem: 1 }, max: one, charm: 8, icon: '⛲', needs: 'bp_fountain', needsText: 'Blueprint found in the Copper Hills' },
+  windmill:{ name: 'Old Windmill',  cat: 'Decor', kind: 'decor', w: 2, h: 2, lvl: 11, cost: () => 700, mats: { planks: 10, iron: 3 }, max: one, charm: 8, icon: '🌬️', needs: 'bp_windmill', needsText: 'Blueprint found at Lantern Lake', wall: '#E9E2D0', roof: '#8E5B2E', hgt: 56 },
 
   tree: { name: 'Tree', kind: 'obstacle', w: 1, h: 1, clear: 20, drop: 'wood',  icon: '🌳' },
   rock: { name: 'Rock', kind: 'obstacle', w: 1, h: 1, clear: 35, drop: 'stone', icon: '🪨' },
@@ -190,7 +197,7 @@ for (const k in PRODUCTS) ITEMS[k] = PRODUCTS[k];
 // ---------- Derived values (used for orders and selling) ----------
 export const VALUE = {};
 for (const k in CROPS) VALUE[k] = CROPS[k].sell;
-VALUE.wood = 6; VALUE.stone = 8;
+VALUE.wood = 6; VALUE.stone = 8; VALUE.iron = 25; VALUE.gem = 60;
 {
   const all = [];
   for (const b in RECIPES) for (const r of RECIPES[b]) all.push(r);

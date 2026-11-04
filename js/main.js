@@ -4,7 +4,8 @@ import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
-export const APP_VERSION = '0.6';
+import * as X from './expedition.js';
+export const APP_VERSION = '0.7';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -43,7 +44,7 @@ function upgradeBlock(o) {
   const lv = G.blvl(o), c = G.nextUpgradeCost(o), b = BUILD[o.t];
   const what = b.kind === 'producer' ? '+1 slot, 8% faster' : b.kind === 'pen' ? '+1 animal space, 8% faster' : '+25% rent';
   if (!c) return `<div class="upg"><b>Level ${lv}</b> <span class="sub">· fully upgraded ✨</span></div>`;
-  const mats = ['wood', 'stone', 'planks', 'nails'].filter(k => c[k]).map(k => req(k, c[k])).join(' ');
+  const mats = ['wood', 'stone', 'planks', 'nails', 'iron', 'gem'].filter(k => c[k]).map(k => req(k, c[k])).join(' ');
   return `<div class="upg"><div class="row"><b>Level ${lv}</b><span class="sub">→ ${lv + 1}: ${what}</span></div>
     <div class="row" style="margin-top:6px"><span class="req ${G.S.coins >= c.coins ? 'ok' : 'no'}">🪙 ${fmtN(c.coins)}</span>${mats}
     <button class="btn sm gold" data-act="upgrade">Upgrade</button></div></div>`;
@@ -431,12 +432,12 @@ function shopSheet() {
   let html = `<div class="tabs">${SHOP_CATS.map(c => `<button class="tab ${c === shopTab ? 'on' : ''}" data-act="tab" data-tab="${c}">${c}</button>`).join('')}</div><div class="grid">`;
   for (const k in BUILD) {
     const b = BUILD[k]; if (b.cat !== shopTab) continue;
-    const n = G.count(k), mx = b.max(G.S.level), locked = G.S.level < b.lvl;
+    const n = G.count(k), mx = b.max(G.S.level), noBp = b.needs && !Q.hasFlag(b.needs), locked = G.S.level < b.lvl || noBp;
     const block = G.buyBlock(k);
     const cost = b.cost(n);
     html += `<div class="card ${locked ? 'locked' : ''}"><div class="big">${b.icon}</div><div class="nm">${b.name}</div>
       <div class="meta">${b.desc && b.kind === 'station' ? b.desc : b.kind === 'house' ? `${b.rent}🪙 / ${secs(b.period)}` : b.kind === 'civic' || b.charm ? `+${b.charm} charm` : b.kind === 'pen' ? `${ANIMALS[b.animal].name}s` : b.kind === 'producer' ? `${RECIPES[k].length} recipes` : b.desc || ''}</div>
-      ${locked ? `<div class="meta">🔒 Level ${b.lvl}</div>` : n >= mx ? `<div class="meta">✔ Owned${mx > 1 && mx < Infinity ? ` ${n}/${mx}` : ''}</div>` :
+      ${locked ? `<div class="meta">${noBp && G.S.level >= b.lvl ? '🗺️ ' + b.needsText : '🔒 Level ' + b.lvl}</div>` : n >= mx ? `<div class="meta">✔ Owned${mx > 1 && mx < Infinity ? ` ${n}/${mx}` : ''}</div>` :
       `<div class="row" style="justify-content:center"><span class="req ${G.S.coins >= cost ? 'ok' : 'no'}">🪙 ${cost}</span>${b.mats ? reqs(b.mats) : ''}</div>
        ${mx < Infinity && mx > 1 ? `<div class="meta">${n}/${mx}</div>` : ''}
        <button class="btn sm ${block ? 'off' : ''}" data-act="buy" data-t="${k}">Buy</button>`}</div>`;
@@ -468,6 +469,93 @@ function menuSheet() {
     <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
     <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
 }
+// ---------- expedition ----------
+let expRegion = 'woods';
+function openExpedition() {
+  closeSheet(); endPlant(); if (view.ghost) cancelPlace();
+  const first = X.REGIONS.find(r => r.id === expRegion && X.regionUnlocked(r)) || X.REGIONS.find(X.regionUnlocked);
+  if (!first) return;
+  expRegion = first.id;
+  $('#exp').hidden = false; sfx.open();
+  renderExp();
+  scrollToFrontier();
+}
+// scroll so the edge of what you've explored is in view
+function scrollToFrontier() {
+  const el = $('#expGrid .tile.can') || $('#expGrid .tile.rev');
+  if (el) { const body = $('#expBody'); body.scrollTop = Math.max(0, el.offsetTop - body.clientHeight / 2); }
+}
+function closeExpedition() { $('#exp').hidden = true; sfx.close(); G.save(); refreshHud(); }
+function renderExp() {
+  const reg = X.REGIONS.find(r => r.id === expRegion), L = X.layout(reg);
+  $('#exp').style.background = reg.bg;
+  $('#expTabs').innerHTML = X.REGIONS.map(r => {
+    const un = X.regionUnlocked(r);
+    return `<button class="tab ${r.id === expRegion ? 'on' : ''} ${un ? '' : 'lock'}" data-reg="${r.id}">${r.icon} ${r.name}${un ? (X.regionState(r).done ? ' ✅' : '') : ` 🔒${r.lvl}`}</button>`;
+  }).join('');
+  const body = $('#expBody'), ts = Math.max(40, Math.min(64, Math.floor((body.clientWidth - 28 - (reg.cols - 1) * 4) / reg.cols)));
+  const grid = $('#expGrid');
+  grid.style.setProperty('--ts', ts + 'px');
+  grid.style.gridTemplateColumns = `repeat(${reg.cols}, ${ts}px)`;
+  grid.innerHTML = L.tiles.map((t, i) => {
+    const T = X.TILE[t];
+    if (X.isRevealed(reg, i)) return `<div class="tile rev ${t === 'water' ? 'water' : ''}" data-i="${i}">${t === 'ruin' ? '🏡' : T.icon}${t === 'camp' ? '<span class="milo">🐈</span>' : ''}</div>`;
+    if (X.canExplore(reg, i)) return `<div class="tile can" data-i="${i}">⚡${T.cost}</div>`;
+    return `<div class="tile fog" data-i="${i}">☁️</div>`;
+  }).join('');
+  updateEnergy();
+  renderExpFoot(reg);
+}
+function renderExpFoot(reg) {
+  const p = X.progress(reg), st = X.regionState(reg);
+  const foods = Object.keys(X.FOOD).filter(k => G.have(k) > 0);
+  $('#expFoot').innerHTML = `<div class="row"><b>${reg.icon} ${reg.name}</b><span class="sub" style="margin:0">· explored ${p.have}/${p.total}</span><span class="spacer"></span>
+      <span class="sub" style="margin:0">${st.done ? 'Fully explored ✅' : `Explore it all: 🪙 ${fmtN(reg.reward.coins)} · ⏳ ${reg.reward.hg} · ${Object.entries(reg.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}`}</span></div>
+    <div class="row" style="margin-top:8px"><b>🧺 Picnic basket</b><span class="sub" style="margin:0">Eat food you've made for energy</span></div>
+    <div class="row" style="margin-top:6px">${foods.length ? foods.map(k => `<span class="food">${ic(k)} ${G.have(k)} <button class="btn sm" data-eat="${k}">+${X.FOOD[k]}⚡</button></span>`).join('') : '<span class="sub" style="margin:0">Bake bread or make other foods to pack a picnic.</span>'}</div>`;
+}
+function updateEnergy() {
+  const e = X.energy();
+  $('#enVal').textContent = e;
+  $('#enFill').style.width = Math.min(100, e / X.ENERGY.max * 100) + '%';
+  $('#enNext').textContent = e >= X.ENERGY.max ? 'full' : `+1 in ${fmtT(X.nextEnergyAt() - now())}`;
+}
+$('#expClose').addEventListener('click', closeExpedition);
+$('#expTabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-reg]'); if (!b) return;
+  const reg = X.REGIONS.find(r => r.id === b.dataset.reg);
+  if (!X.regionUnlocked(reg)) { sfx.error(); toast(G.S.level < reg.lvl ? `Reach level ${reg.lvl} to explore ${reg.name}` : 'Find the old map first'); return; }
+  expRegion = reg.id; sfx.tap(); renderExp(); scrollToFrontier();
+});
+$('#expFoot').addEventListener('click', e => {
+  const b = e.target.closest('[data-eat]'); if (!b) return;
+  const n = X.eat(b.dataset.eat);
+  if (n) { sfx.collect(); toast(`Yum! +${n} ⚡`); G.save(); renderExp(); }
+});
+$('#expGrid').addEventListener('click', e => {
+  const el = e.target.closest('.tile'); if (!el) return;
+  const reg = X.REGIONS.find(r => r.id === expRegion), i = +el.dataset.i;
+  if (!el.classList.contains('can')) { if (el.classList.contains('fog')) { sfx.error(); toast('Explore next to the tiles you have uncovered'); } return; }
+  const r = X.explore(reg, i);
+  if (r.err === 'energy') { sfx.error(); toast(`Need ${r.cost} ⚡ energy. Eat something from your picnic basket, or wait for it to refill.`); return; }
+  if (!r.ok) return;
+  ({ chest: sfx.levelUp, rock: sfx.clear, ore: sfx.clear, gemrock: sfx.collect, brush: sfx.clear, berries: sfx.harvest, ruin: sfx.build }[r.type] || sfx.plant).call(sfx);
+  const bits = [];
+  if (r.coins) bits.push(`+${r.coins}🪙`);
+  if (r.hg) bits.push(`+${r.hg}⏳`);
+  for (const k in r.loot) bits.push(`+${r.loot[k]}${ic(k)}`);
+  if (bits.length) toast(`${X.TILE[r.type].name}: ${bits.join(' ')}`);
+  G.save();
+  renderExp();
+  const nt = $(`#expGrid .tile[data-i="${i}"]`); if (nt) nt.classList.add('pop');
+  if (r.story) modal(`<div class="portrait">🏚️</div><h2>${r.story.name}</h2><div class="say">${r.story.text}</div>
+      <p><b>${Object.entries(r.story.items).map(([k, v]) => `${ic(k)} ${v} ${nm(k)}`).join(' · ')}</b></p><p class="sub">New blueprint! Find it in the Shop under Decor.</p>
+      <button class="btn wide" data-act="closeModal">Amazing!</button>`);
+  if (r.finished) setTimeout(() => { sfx.levelUp(); modal(`<div class="portrait">${r.finished.icon}</div><h2>${r.finished.name} explored!</h2>
+      <p>Milo is very proud of himself. 🐈</p><p><b>🪙 ${fmtN(r.finished.reward.coins)} · ⏳ ${r.finished.reward.hg} · ${Object.entries(r.finished.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}</b></p>
+      <button class="btn wide" data-act="closeModal">Hooray!</button>`); }, r.story ? 0 : 300);
+});
+
 // ---------- freight train ----------
 function stationSheet(o) {
   const st = G.trainState(o);
@@ -567,6 +655,8 @@ function masteryList() {
     rows.map(([kind, id]) => `<div class="invrow"><span class="ic">${ic(id)}</span><div><div class="n">${nm(id)}</div><div class="nm">${starStr(kind, id)} ${masteryLine(kind, id)}</div></div></div>`).join('') + '</div>';
 }
 function exploreSheet() {
+  if (G.S.level < 5 && !Q.hasFlag('expedition')) return `<div style="font-size:48px;text-align:center">🌲</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
+    <p class="sub">Exploring unlocks around level 5. Keep an eye on Milo...</p>`;
   if (!Q.hasFlag('expedition')) return `<div style="font-size:48px;text-align:center">🌲</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
     <p class="sub">Grandma Ellis says Milo keeps disappearing past the tree line. Maybe he knows something. (Unlocks through the quest "Where Does Milo Go?")</p>`;
   return `<div style="font-size:48px;text-align:center">🗺️</div><p>Beyond the tree line lie the hills and hollows around Pelham Acres.
@@ -577,6 +667,7 @@ function exploreSheet() {
 document.querySelectorAll('[data-tb]').forEach(btn => btn.addEventListener('click', () => {
   endPlant(); if (view.ghost) cancelPlace();
   const k = btn.dataset.tb;
+  if (k === 'explore' && Q.hasFlag('expedition')) { openExpedition(); return; }
   if (sheetFn && $('#sheetTitle').dataset.k === k) { closeSheet(); $('#sheetTitle').dataset.k = ''; return; }
   ({ shop: () => openSheet('Shop', shopSheet), quests: () => openSheet('Quests', questsSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet),
      explore: () => openSheet('Explore', exploreSheet), menu: () => openSheet('Menu', menuSheet) })[k]();
@@ -697,7 +788,7 @@ if (!loaded) {
 
 function frame() { draw(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
-setInterval(() => { refreshHud(); liveUpdate(); questTick(); }, 500);
+setInterval(() => { refreshHud(); liveUpdate(); if ($('#exp').hidden) questTick(); else updateEnergy(); }, 500);
 setInterval(() => G.save(), 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); });
 addEventListener('pagehide', () => G.save());

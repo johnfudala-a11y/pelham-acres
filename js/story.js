@@ -121,6 +121,23 @@ export const QUESTS = [
     outro: "Well I'll be! Milo dragged home an old, folded map of the hills around Pelham Acres. There are places marked on it nobody's seen in years...",
     goals: [{ type: 'stat', key: 'clear', n: 10, label: 'Clear trees or rocks' }, { type: 'stat', key: 'pet:milo', n: 3, label: 'Pet Milo' }],
     reward: { coins: 150, xp: 40, items: { axe: 2 } }, flag: 'expedition' },
+
+  // ---------- Expeditions ----------
+  { id: 'woods1', who: 'ellis', lvl: 5, after: ['miloMap'], title: 'Into the Whispering Woods',
+    intro: "Take the map and follow Milo into the woods. Pack a picnic: bread and cookies give you energy for exploring. Be careful, dear!",
+    outro: "You came back with leaves in your hair and a twinkle in your eye. Find anything interesting?",
+    goals: [{ type: 'stat', key: 'explore:woods', n: 12, label: 'Explore Whispering Woods tiles' }],
+    reward: { coins: 150, xp: 40, items: { cookies: 3 } } },
+  { id: 'shed', who: 'hattie', lvl: 5, after: ['woods1'], title: "Great-Aunt May's Secret",
+    intro: "Your great-aunt May used to vanish into those woods for hours. Folks said she had a little hideaway out there. See if you can find it!",
+    outro: "Her old shed! And plans for a gazebo. May always did love a garden party. Let's build it in her honor.",
+    goals: [{ type: 'stat', key: 'ruin', n: 1, label: 'Find the ruins in the woods' }],
+    reward: { coins: 300, xp: 60, hg: 2 } },
+  { id: 'hills1', who: 'tom', lvl: 8, after: ['shed'], title: 'Copper Country',
+    intro: "When I was a lad, the Copper Hills mine kept this whole valley running. There's still iron and gems up there for anyone brave enough. You'll want 'em for upgrades.",
+    outro: "Real iron ore! Now we can build things that'll last a hundred years.",
+    goals: [{ type: 'stat', key: 'explore:hills', n: 15, label: 'Explore Copper Hills tiles' }],
+    reward: { coins: 400, xp: 80, items: { iron: 3 } } },
 ];
 export const QUEST_BY_ID = Object.fromEntries(QUESTS.map(q => [q.id, q]));
 export const MAX_ACTIVE = 4;
