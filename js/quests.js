@@ -40,6 +40,29 @@ export const introduced = who => QUESTS.some(q => q.who === who && (Q().active[q
 export function markSeen(id) { const a = Q().active[id]; if (a) a.seen = true; }
 export const unseen = () => activeQuests().filter(q => !Q().active[q.id].seen);
 
+// ---------- Daily favor: one special request from a neighbor each real day ----------
+import { PEOPLE } from './story.js';
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+export function daily() {
+  const S = G.S;
+  if (!S.quests || !S.quests.done.includes('welcome')) return null;
+  if (!S.daily || S.daily.day !== today()) {
+    const met = Object.keys(PEOPLE).filter(introduced);
+    const who = met[Math.floor(Math.random() * met.length)] || 'hattie';
+    const o = G.genOrder();
+    S.daily = { day: today(), who, items: o.items, coins: Math.round(o.coins * 2), xp: Math.round(o.xp * 1.5), hg: 1, done: false };
+  }
+  return S.daily;
+}
+export function claimDaily() {
+  const d = daily();
+  if (!d || d.done || !G.hasAll(d.items)) return null;
+  G.takeAll(d.items);
+  G.S.coins += d.coins; G.S.hg += d.hg; d.done = true;
+  G.addXP(d.xp); G.stat('favor');
+  return d;
+}
+
 export function claim(id) {
   const q = QUEST_BY_ID[id], st = Q();
   if (!q || !st.active[id] || !isComplete(q)) return null;

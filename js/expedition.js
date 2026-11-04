@@ -3,7 +3,7 @@
 import * as G from './game.js';
 
 export const ENERGY = { max: 30, regenMs: 120000 };
-export const FOOD = { bread: 4, cornbread: 6, cookies: 8, cheese: 5, potatoSoup: 10, carrotCake: 12, strawberryJam: 6, pumpkinPie: 15, pancakes: 12, blueberryJam: 8, coffeeCup: 8, hotCocoa: 10, mocha: 12 };
+export const FOOD = { veggieStew: 12, muffins: 9, iceCream: 6, bread: 4, cornbread: 6, cookies: 8, cheese: 5, potatoSoup: 10, carrotCake: 12, strawberryJam: 6, pumpkinPie: 15, pancakes: 12, blueberryJam: 8, coffeeCup: 8, hotCocoa: 10, mocha: 12 };
 
 export const REGIONS = [
   { id: 'woods', name: 'Whispering Woods', icon: '🌲', lvl: 5, flag: 'expedition', seed: 101, cols: 9, rows: 13, bg: '#4E7A3A',

@@ -86,7 +86,7 @@ export const count = t => S.objs.reduce((n, o) => n + (o.t === t ? 1 : 0), 0);
 export const findObj = t => S.objs.find(o => o.t === t);
 
 // ---------- Inventory ----------
-export const storageCap = () => 50 + (S.barnLvl - 1) * 25;
+export const storageCap = () => 60 + (S.barnLvl - 1) * 30;
 export function storageUsed() { let n = 0; for (const k in S.inv) if (!MATS.has(k)) n += S.inv[k]; return n; }
 export const hasSpace = n => storageUsed() + n <= storageCap();
 export const have = id => S.inv[id] || 0;

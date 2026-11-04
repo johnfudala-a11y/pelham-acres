@@ -4,7 +4,7 @@ import { TW, TH, MAP, BUILD, CROPS, ITEMS } from './data.js';
 import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState } from './game.js';
 
 export const cam = { x: 0, y: 0, z: 1 };
-export const view = { ghost: null, floaters: [], plantCrop: null };
+export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
 export const SPRITES = {}; // type -> HTMLImageElement (filled in later with AI art)
 
 let cv, ctx, W = 0, H = 0, dpr = 1;
@@ -398,7 +398,22 @@ export function draw() {
     ctx.globalAlpha = 1;
   }
   ctx.restore();
+  drawGuide(pt);
   drawWeather(pt);
+}
+// bouncing arrow pointing at whatever the current hint is about
+function drawGuide(pt) {
+  const g = view.guide; if (!g) return;
+  let gx, gy, lift;
+  if (g.walker) { gx = g.walker.x; gy = g.walker.y; lift = g.walker.person ? 62 : 36; }
+  else if (g.obj) { const b = BUILD[g.obj.t]; if (!S.objs.includes(g.obj)) return; gx = g.obj.x + b.w / 2; gy = g.obj.y + b.h / 2; lift = heightOf(g.obj) + 22; }
+  else return;
+  const [px, py] = P(gx, gy), y = py - lift - Math.abs(Math.sin(pt / 280)) * 10;
+  ctx.save();
+  ctx.fillStyle = '#FFD24A'; ctx.strokeStyle = '#7A4E0A'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(px, y + 14); ctx.lineTo(px - 12, y); ctx.lineTo(px - 5, y); ctx.lineTo(px - 5, y - 14); ctx.lineTo(px + 5, y - 14); ctx.lineTo(px + 5, y); ctx.lineTo(px + 12, y); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
 }
 
 function drawObj(o, t) {

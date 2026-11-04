@@ -5,7 +5,7 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.7';
+export const APP_VERSION = '0.8';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -173,6 +173,11 @@ function act(el) {
   switch (d.act) {
     case 'closeModal': closeModal(); setTimeout(showLevelUps, 200); break;
     case 'claimQuest': claimQuest(d.id); return;
+    case 'claimDaily': {
+      const r = Q.claimDaily();
+      if (r) { sfx.deliver(); toast(`${PEOPLE[r.who].name}: "Thank you, dear!" +${fmtN(r.coins)} 🪙 +${r.hg} ⏳`); } else { sfx.error(); toast("You don't have everything yet"); }
+      break;
+    }
     case 'fillCrate': {
       const r = G.fillCrate(o, +d.i);
       if (r === 'ok') { sfx.deliver(); } else { sfx.error(); toast(r === 'missing' ? "You don't have enough yet" : 'The train already left'); }
@@ -231,7 +236,7 @@ function act(el) {
     }
     case 'skip': G.skipOrder(+d.i); break;
     case 'sell': { const c = G.sell(d.id, +d.n); if (c) { sfx.coin(); toast(`Sold for ${c} 🪙`); } break; }
-    case 'upgradeBarn': if (G.upgradeBarn()) { sfx.build(); toast('Barn upgraded! +25 space'); } else { sfx.error(); toast('Need more coins or materials'); } break;
+    case 'upgradeBarn': if (G.upgradeBarn()) { sfx.build(); toast('Barn upgraded! +30 space'); } else { sfx.error(); toast('Need more coins or materials'); } break;
     case 'tab': sfx.tap(); shopTab = d.tab; break;
     case 'buy': { const blk = G.buyBlock(d.t); if (blk) { sfx.error(); toast(blk); break; } sfx.tap(); startPlacing(d.t); return; }
     case 'export': { const ta = $('#saveText'); ta.value = G.exportSave(); ta.select(); try { navigator.clipboard.writeText(ta.value); toast('Save copied'); } catch (e) {} return; }
@@ -245,8 +250,8 @@ function act(el) {
       return;
     case 'resetYes': G.resetGame(); afterLoad(); closeModal(); closeSheet(); toast('A fresh start in Pelham Acres'); return;
     case 'toggle':
-      G.S.settings[d.k] = !G.S.settings[d.k];
-      if (d.k === 'music') setMusic(G.S.settings.music); else setSfx(G.S.settings.sfx);
+      G.S.settings[d.k] = d.k === 'hints' ? G.S.settings.hints === false : !G.S.settings[d.k];
+      if (d.k === 'music') setMusic(G.S.settings.music); else if (d.k === 'sfx') setSfx(G.S.settings.sfx); else applyGuide();
       sfx.tap(); refreshSoundBtn(); break;
   }
   G.save(); refreshHud(); renderSheet();
@@ -420,7 +425,7 @@ function barnSheet() {
   const used = G.storageUsed(), cap = G.storageCap(), up = G.barnUpgradeCost();
   const items = Object.entries(G.S.inv).filter(([, n]) => n > 0).sort((a, b) => (MATS.has(a[0]) - MATS.has(b[0])) || a[0].localeCompare(b[0]));
   let html = `<p class="sub">Stored: <b>${used}/${cap}</b> (wood and stone don't take space)</p><div class="bar"><div style="width:${Math.min(100, used / cap * 100)}%"></div></div>
-    <h3>Upgrade barn (+25)</h3><div class="row"><span class="req ${G.S.coins >= up.coins ? 'ok' : 'no'}">🪙 ${up.coins}</span>${req('wood', up.wood)}${req('stone', up.stone)}
+    <h3>Upgrade barn (+30)</h3><div class="row"><span class="req ${G.S.coins >= up.coins ? 'ok' : 'no'}">🪙 ${up.coins}</span>${req('wood', up.wood)}${req('stone', up.stone)}
     <button class="btn sm" data-act="upgradeBarn">Upgrade</button></div><h3>Your goods</h3>`;
   if (!items.length) return html + '<p class="sub">Empty. Harvest some crops!</p>';
   html += '<div class="inv">' + items.map(([id, n]) => `<div class="invrow"><span class="ic">${ic(id)}</span><div><div class="n">${n}</div><div class="nm">${nm(id)}</div></div><span class="spacer"></span>
@@ -459,6 +464,7 @@ function menuSheet() {
   const S = G.S, st = S.settings;
   return `<p><b>${S.town}</b> · Level ${S.level} · ${S.delivered || 0} orders delivered · ${S.cleared || 0} spots cleared</p>
     <p class="sub">Town charm: ${G.charm()}. No ads, no purchases — ever. Hourglasses are earned by leveling up and by every 5th delivery.</p>
+    <h3>Help</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="hints">Hints and arrows: ${st.hints === false ? 'Off' : 'On'}</button></div>
     <h3>Sound</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="music">Music: ${st.music ? 'On' : 'Off'}</button>
     <button class="btn alt sm" data-act="toggle" data-k="sfx">Sound effects: ${st.sfx ? 'On' : 'Off'}</button></div>
     <p class="sub">No sound? Turn the volume up and tap the map once. You can also tap 🔊 in the top corner.</p>
@@ -590,11 +596,20 @@ function goalsHtml(q) {
       <div class="bar"><div style="width:${p / g.n * 100}%"></div></div><b>${p}/${g.n}</b></div>`;
   }).join('');
 }
+function dailyHtml() {
+  const d = Q.daily(); if (!d) return '';
+  const p = PEOPLE[d.who], ok = G.hasAll(d.items);
+  if (d.done) return `<div class="quest"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">⭐ Daily favor done!</div><div class="sub" style="margin:0">${p.name} is grateful. A new favor comes tomorrow.</div></div></div></div>`;
+  return `<div class="quest ${ok ? 'ready' : ''}" style="border-color:#F0D27A;background:#FFF9E6"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">⭐ Daily favor</div><div class="sub" style="margin:0">${p.name} needs a hand today</div></div></div>
+    <div class="row" style="margin:8px 0">${reqs(d.items)}</div>
+    <div class="row"><span class="sub" style="margin:0">Reward: 🪙 ${fmtN(d.coins)} · ⭐ ${d.xp} · ⏳ ${d.hg}</span><span class="spacer"></span>
+    <button class="btn ${ok ? '' : 'off'}" data-act="claimDaily">Give</button></div></div>`;
+}
 function questsSheet() {
   Q.refreshQuests();
   const list = Q.activeQuests();
-  if (!list.length) return '<p class="sub">No quests right now. Keep farming! New requests arrive as you level up.</p>';
-  return list.map(q => {
+  if (!list.length) return dailyHtml() + '<p class="sub">No quests right now. Keep farming! New requests arrive as you level up.</p>';
+  return dailyHtml() + list.map(q => {
     const p = PEOPLE[q.who], ready = Q.isComplete(q);
     return `<div class="quest ${ready ? 'ready' : ''}"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">${q.title}</div><div class="sub" style="margin:0">${p.name}</div></div></div>
       ${goalsHtml(q)}<div class="row" style="margin-top:8px"><span class="sub" style="margin:0">Reward: ${rewardLine(q.reward)}</span><span class="spacer"></span>
@@ -645,7 +660,73 @@ function questTick() {
   const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length;
   b.hidden = !n; b.textContent = n;
   if ($('#modal').hidden && !levelQueue.length) { const u = Q.unseen()[0]; if (u) questIntro(u); }
+  applyGuide();
 }
+
+// ---------- guidance: an arrow + hint for the next step of your quests ----------
+function makerOf(item) {
+  for (const b in RECIPES) if (RECIPES[b].some(r => r.out === item)) return b;
+  for (const b in BUILD) if (BUILD[b].kind === 'pen' && ANIMALS[BUILD[b].animal].product === item) return b;
+  return null;
+}
+function nearestObstacle() {
+  let best = null, bd = 1e9;
+  for (const o of G.S.objs) if (BUILD[o.t].kind === 'obstacle') { const d = Math.hypot(o.x - 14, o.y - 13); if (d < bd) { bd = d; best = o; } }
+  return best;
+}
+function guideForItem(item, verb) {
+  if (CROPS[item]) {
+    const ready = G.S.objs.find(o => o.t === 'field' && o.crop === item && G.fieldReady(o));
+    if (ready) return { text: `Tap the ripe ${nm(item).toLowerCase()} to harvest it`, obj: ready };
+    const growing = G.S.objs.find(o => o.t === 'field' && o.crop === item);
+    const empty = G.S.objs.find(o => o.t === 'field' && !o.crop);
+    if (empty) return { text: `Tap an empty field and plant ${nm(item).toLowerCase()}`, obj: empty };
+    if (growing) return { text: `Your ${nm(item).toLowerCase()} is growing. Check back soon!`, obj: growing };
+    return { text: 'All fields are busy. Buy another field in the Shop', tb: 'shop' };
+  }
+  const b = makerOf(item);
+  if (!b) return { text: `${verb} ${nm(item)}` };
+  const o = G.findObj(b);
+  if (!o) return { text: `Build a ${BUILD[b].name} from the Shop (${BUILD[b].cat} tab)`, tb: 'shop' };
+  if (BUILD[b].kind === 'pen') return { text: o.animals.length ? `Feed your ${G.penAnimal(o).name.toLowerCase()}s and collect ${nm(item).toLowerCase()}` : `Tap the ${BUILD[b].name} and buy an animal`, obj: o };
+  return { text: `${verb} ${nm(item)} at the ${BUILD[b].name}`, obj: o };
+}
+function guideFor(q, g) {
+  if (g.type === 'have') return guideForItem(g.id, 'Make');
+  if (g.type === 'own') return G.count(g.id) ? null : { text: `Buy a ${BUILD[g.id].name} in the Shop (${BUILD[g.id].cat} tab)`, tb: 'shop' };
+  if (g.type === 'animals') { const pen = Object.keys(BUILD).find(b => BUILD[b].animal === g.id); const o = G.findObj(pen); return o ? { text: `Tap the ${BUILD[pen].name} and buy more ${g.id}s`, obj: o } : { text: `Build a ${BUILD[pen].name} from the Shop`, tb: 'shop' }; }
+  if (g.type !== 'stat') return { text: g.label };
+  const [k, arg] = g.key.split(':');
+  switch (k) {
+    case 'harvest': return guideForItem(arg, 'Grow');
+    case 'make': return guideForItem(arg, 'Make');
+    case 'deliver': return { text: 'Open Orders and deliver goods to the townsfolk', tb: 'orders' };
+    case 'crate': { const o = G.findObj('station'); return o ? { text: 'Load crates onto the freight train', obj: o } : { text: 'Build the Train Station', tb: 'shop' }; }
+    case 'rent': { const o = G.S.objs.find(x => BUILD[x.t].kind === 'house'); return o ? { text: 'Tap houses to collect rent when coins appear', obj: o } : { text: 'Build a Cottage', tb: 'shop' }; }
+    case 'clear': { const o = nearestObstacle(); return o ? { text: 'Tap a tree or rock to clear it', obj: o } : null; }
+    case 'upgrade': return { text: 'Open any building and tap Upgrade' };
+    case 'star': return { text: 'Keep harvesting the same crop to earn a mastery star' };
+    case 'pet': { const c = cats.find(c => c.id === arg); return { text: `Find ${c.name} and give him a pet`, walker: c }; }
+    case 'explore': case 'ruin': return { text: 'Tap Explore to head out with Milo', tb: 'explore' };
+  }
+  return { text: g.label };
+}
+function computeGuide() {
+  if (G.S.settings.hints === false) return null;
+  const ready = Q.claimable()[0];
+  if (ready) { const p = people.find(x => x.id === ready.who); return { text: `${PEOPLE[ready.who].name} has a reward for you. Tap them!`, walker: p }; }
+  for (const q of Q.activeQuests()) for (const g of q.goals) if (Q.goalProgress(q, g) < g.n) { const r = guideFor(q, g); if (r) return { ...r, quest: q }; }
+  return null;
+}
+function applyGuide() {
+  const g = computeGuide();
+  view.guide = g && (g.obj || g.walker) ? g : null;
+  const h = $('#hint');
+  if (!g || view.ghost || view.plantCrop) { h.hidden = true; }
+  else { h.hidden = false; h.textContent = `💡 ${g.text}`; }
+  document.querySelectorAll('.tb').forEach(b => b.classList.toggle('pulse', !!g && g.tb === b.dataset.tb));
+}
+$('#hint').addEventListener('click', () => { sfx.tap(); openSheet('Quests', questsSheet); $('#sheetTitle').dataset.k = 'quests'; });
 
 function masteryList() {
   const rows = [];

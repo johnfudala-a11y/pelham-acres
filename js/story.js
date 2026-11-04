@@ -122,6 +122,28 @@ export const QUESTS = [
     goals: [{ type: 'stat', key: 'clear', n: 10, label: 'Clear trees or rocks' }, { type: 'stat', key: 'pet:milo', n: 3, label: 'Pet Milo' }],
     reward: { coins: 150, xp: 40, items: { axe: 2 } }, flag: 'expedition' },
 
+  // ---------- More townsfolk requests ----------
+  { id: 'stew', who: 'joe', lvl: 6, after: ['cows'], title: 'Hearty Supper',
+    intro: "Nothing beats a pot of veggie stew after a long day in the fields. Make a few batches and I'll share my secret herb patch.",
+    outro: "Mmm, just like my mother's. Here, a little something for the trouble.",
+    goals: [{ type: 'stat', key: 'make:veggieStew', n: 3, label: 'Make veggie stew' }],
+    reward: { coins: 220, xp: 50, items: { fertilizer: 4 } } },
+  { id: 'icecream', who: 'rosa', lvl: 7, after: ['cottage', 'dairy'], title: 'Ice Cream Social',
+    intro: "I'm throwing an ice cream social at the inn! Everyone's invited, but I have no ice cream. You see my problem.",
+    outro: "The social was a smash hit! Mrs. Abernathy had three bowls. Don't tell her I told you.",
+    goals: [{ type: 'have', id: 'iceCream', n: 4, label: 'Bring ice cream' }],
+    reward: { coins: 380, xp: 70, hg: 1 } },
+  { id: 'sweaters', who: 'ellis', lvl: 8, after: ['ollieBench'], title: 'Warm and Cozy',
+    intro: "Winter's coming, and some of the little ones in town don't have proper sweaters. Could you weave a few on the loom?",
+    outro: "You have a kind heart, farmer. And Ollie says thank you too. He's sleeping on one.",
+    goals: [{ type: 'stat', key: 'make:sweater', n: 3, label: 'Make sweaters' }],
+    reward: { coins: 450, xp: 80, hg: 2 } },
+  { id: 'fountainQ', who: 'hattie', lvl: 8, after: ['hills1'], title: 'The Town Fountain',
+    intro: "You found the old fountain plans in the mine? Our town square has been bare for decades. Let's make it sparkle!",
+    outro: "Children are already tossing pennies in for wishes. Mine was that you'd stay in Pelham Acres forever.",
+    goals: [{ type: 'own', id: 'fountain', n: 1, label: 'Build the Town Fountain' }],
+    reward: { coins: 600, xp: 100, hg: 2 } },
+
   // ---------- Expeditions ----------
   { id: 'woods1', who: 'ellis', lvl: 5, after: ['miloMap'], title: 'Into the Whispering Woods',
     intro: "Take the map and follow Milo into the woods. Pack a picnic: bread and cookies give you energy for exploring. Be careful, dear!",
