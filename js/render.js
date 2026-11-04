@@ -5,7 +5,41 @@ import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, 
 
 export const cam = { x: 0, y: 0, z: 1 };
 export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
-export const SPRITES = {}; // type -> HTMLImageElement (filled in later with AI art)
+// ---------- AI-painted sprites ----------
+// k = width as a fraction of the footprint's diamond width; dy = nudge of the bottom edge.
+export const SPRITES = {};
+const SPRITE_CFG = {
+  barn: { k: 1.1 }, feedMill: { k: 1.1 }, bakery: { k: 1.0 }, workshop: { k: 1.1 }, dairy: { k: 1.1 }, sugarMill: { k: 1.12 },
+  kitchen: { k: 1.12 }, loom: { k: 1.1 }, cafe: { k: 1.0 },
+  cottage: { k: 1.05 }, farmhouse: { k: 1.15 }, townhouse: { k: 0.75 }, manor: { k: 1.12 },
+  townHall: { k: 1.1 }, generalStore: { k: 1.12 }, schoolhouse: { k: 1.05 }, clockTower: { k: 0.46 }, bandstand: { k: 1.0 }, station: { k: 1.08 },
+  flowers: { k: 1.0 }, hedge: { k: 0.9 }, bench: { k: 0.95 }, lamp: { k: 0.42 }, pond: { k: 1.05 }, gazebo: { k: 1.0 }, fountain: { k: 1.0 }, windmill: { k: 1.05 },
+};
+const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
+  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis'];
+export function loadSprites() {
+  const load = (n, tries) => {
+    const im = new Image();
+    im.decoding = 'async';
+    im.onerror = () => { if (tries < 3) setTimeout(() => load(n, tries + 1), 800 * (tries + 1)); else delete SPRITES[n]; };
+    im.src = `sprites/${n}.webp${tries ? '?r=' + tries : ''}`;
+    SPRITES[n] = im;
+  };
+  for (const n of SPRITE_NAMES) load(n, 0);
+}
+const spr = n => { const s = SPRITES[n]; return s && s.complete && s.naturalWidth ? s : null; };
+// draw an image with its bottom-centre at (cx, by), given width; flip mirrors horizontally
+function drawSprite(im, cx, by, w, flip, noShadow) {
+  const h = w * im.naturalHeight / im.naturalWidth;
+  if (!noShadow) {
+    ctx.fillStyle = 'rgba(30,40,10,0.22)';
+    ctx.beginPath(); ctx.ellipse(cx + w * 0.04, by - 3, w * 0.46, w * 0.16, 0, 0, 7); ctx.fill();
+  }
+  if (flip) { ctx.save(); ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.drawImage(im, -w / 2, by - h, w, h); ctx.restore(); }
+  else ctx.drawImage(im, cx - w / 2, by - h, w, h);
+  return h;
+}
+const footW = b => (b.w + b.h) * hw;
 
 let cv, ctx, W = 0, H = 0, dpr = 1;
 const hw = TW / 2, hh = TH / 2;
@@ -70,7 +104,9 @@ function hash(n) { n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n = n ^ (n >>> 4
 // ---------- geometry ----------
 function heightOf(o) {
   const b = BUILD[o.t];
-  if (b.kind === 'obstacle') return o.t === 'tree' ? 52 : 22;
+  const cfg = SPRITE_CFG[o.t], im = cfg && spr(o.t);
+  if (im) return footW(b) * cfg.k * im.naturalHeight / im.naturalWidth - (b.w + b.h) * hh * 0.5;
+  if (b.kind === 'obstacle') return o.t === 'tree' ? (spr('tree-summer') ? 68 : 52) : (spr('rock') ? 32 : 22);
   if (b.kind === 'pen') return 36;
   if (b.kind === 'decor') return o.t === 'lamp' ? 40 : o.t === 'windmill' ? 100 : o.t === 'gazebo' ? 50 : o.t === 'fountain' ? 36 : 18;
   if (b.kind === 'field' || b.kind === 'path') return 0;
@@ -142,6 +178,8 @@ function drawPath(o) { poly(diamond(o.x, o.y, 1, 1, 1), '#CFC6B4', 'rgba(90,80,6
 function drawTree(o, t) {
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
   const v = hash(o.id), s = 0.85 + v * 0.35, sway = Math.sin(t / 900 + o.id) * 1.2;
+  const tim = spr('tree-' + season().name.toLowerCase());
+  if (tim) { drawSprite(tim, cx + sway * 0.5, cy + 10, 70 * s * (season().name === 'Winter' ? 0.8 : 1), v > 0.5); return; }
   ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(cx + 4, cy + 2, 16 * s, 7 * s, 0, 0, 7); ctx.fill();
   ctx.fillStyle = '#6D4C30'; ctx.fillRect(cx - 3, cy - 18 * s, 6, 18 * s);
   const se = season(), si = SEASONS_IDX(se);
@@ -186,6 +224,7 @@ function drawWeather(pt) {
 }
 function drawRock(o) {
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5), v = hash(o.id + 7), s = 0.8 + v * 0.4;
+  const rim = spr('rock'); if (rim) { drawSprite(rim, cx, cy + 10, 58 * s, v > 0.5); return; }
   ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(cx + 3, cy + 2, 16 * s, 7 * s, 0, 0, 7); ctx.fill();
   poly([[cx - 16 * s, cy], [cx - 10 * s, cy - 14 * s], [cx + 2 * s, cy - 20 * s], [cx + 14 * s, cy - 10 * s], [cx + 16 * s, cy], [cx + 4 * s, cy + 5 * s]], '#9A978F');
   poly([[cx - 10 * s, cy - 14 * s], [cx + 2 * s, cy - 20 * s], [cx + 14 * s, cy - 10 * s], [cx, cy - 8 * s]], '#B9B6AE');
@@ -195,16 +234,22 @@ function drawPen(o, b, t) {
   const pts = diamond(o.x, o.y, b.w, b.h, 1);
   poly(pts, b.ground, 'rgba(80,60,30,.3)');
   // little shelter in the back corner
-  drawBox(o.x + 0.1, o.y + 0.1, 0.9, 0.9, 18, b.wall, b.roof, 12, null);
-  const a = penAnimal(o);
-  o.animals.forEach((an, i) => {
+  const shel = spr(o.t);
+  if (shel) { const [sx, sy] = P(o.x + 0.55, o.y + 0.55); drawSprite(shel, sx, sy + 14, 74, false); }
+  else drawBox(o.x + 0.1, o.y + 0.1, 0.9, 0.9, 18, b.wall, b.roof, 12, null);
+  const a = penAnimal(o), aim = spr(b.animal), aw = { chicken: 22, cow: 38, sheep: 32 }[b.animal];
+  o.animals.map((an, i) => {
     const r1 = hash(o.id * 31 + i), r2 = hash(o.id * 17 + i * 3);
-    const fx = 0.35 + 0.55 * ((r1 + Math.sin(t / 2600 + i * 2) * 0.12 + 1) % 1);
+    const wob = Math.sin(t / 2600 + i * 2);
+    const fx = 0.35 + 0.55 * ((r1 + wob * 0.12 + 1) % 1);
     const fy = 0.45 + 0.45 * ((r2 + Math.cos(t / 3100 + i) * 0.12 + 1) % 1);
+    return { an, i, fx, fy, flip: Math.cos(t / 2600 + i * 2) < 0 };
+  }).sort((p, q) => (p.fx + p.fy) - (q.fx + q.fy)).forEach(({ an, i, fx, fy, flip }) => {
     const [sx, sy] = P(o.x + fx * b.w, o.y + fy * b.h);
-    const st = animalState(an);
-    emoji(a.icon, sx, sy - 8 + (st === 'busy' ? Math.sin(t / 250 + i) : 0), 17);
-    if (st === 'ready') emoji(ITEMS[a.product].icon, sx + 9, sy - 20, 10);
+    const st = animalState(an), bob = st === 'busy' ? Math.sin(t / 250 + i) : 0;
+    if (aim) drawSprite(aim, sx, sy + 2 + bob, aw, flip);
+    else emoji(a.icon, sx, sy - 8 + bob, 17);
+    if (st === 'ready') emoji(ITEMS[a.product].icon, sx + 9, sy - (aim ? aw * 0.9 : 20), 10);
   });
   // fence
   const T = P(o.x, o.y), R = P(o.x + b.w, o.y), B = P(o.x + b.w, o.y + b.h), L = P(o.x, o.y + b.h);
@@ -418,12 +463,12 @@ function drawGuide(pt) {
 
 function drawObj(o, t) {
   const b = BUILD[o.t];
-  const sp = SPRITES[o.t];
-  if (sp && sp.complete && sp.naturalWidth) {
-    const [bx, by] = P(o.x + b.w, o.y + b.h);
-    const L = P(o.x, o.y + b.h), R = P(o.x + b.w, o.y);
-    const w = R[0] - L[0], h = w * sp.naturalHeight / sp.naturalWidth;
-    ctx.drawImage(sp, L[0], by - h, w, h);
+  const cfg = SPRITE_CFG[o.t], sp = cfg && spr(o.t);
+  if (sp) {
+    const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1];
+    drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, false);
+    if (b.kind === 'station') drawTrain(o, b, t);
+    if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
     return;
   }
   switch (b.kind) {
@@ -436,12 +481,14 @@ function drawObj(o, t) {
       drawBox(o.x, o.y, b.w, b.h, b.hgt || 30, b.wall, b.roof, 18 + (b.w + b.h) * 3, b.icon);
       if (b.kind === 'civic') drawCivicExtras(o, b, t);
       if (b.kind === 'station') drawTrain(o, b, t);
-      if ((o.lvl || 1) > 1) {
-        const [lx, ly] = P(o.x + b.w, o.y + b.h);
-        ctx.fillStyle = '#E9A825'; ctx.beginPath(); ctx.arc(lx - 8, ly - 10, 8, 0, 7); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.lvl, lx - 8, ly - 9.5);
-      }
+      if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
   }
+}
+function drawLevelBadge(o, b) {
+  const [lx, ly] = P(o.x + b.w, o.y + b.h);
+  ctx.fillStyle = '#E9A825'; ctx.beginPath(); ctx.arc(lx - 8, ly - 10, 8, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.lvl, lx - 8, ly - 9.5);
 }
 function drawGhostFootprint(g) {
   const b = BUILD[g.t];
@@ -495,6 +542,18 @@ function updateCats(pt) {
 function drawCat(c, pt) {
   const [px, py] = P(c.x, c.y);
   const moving = pt >= c.pause && Math.hypot(c.tx - c.x, c.ty - c.y) > 0.05;
+  const cim = spr(c.fat ? (c.nap ? 'ollie-sleep' : 'ollie') : 'milo');
+  if (cim) {
+    const lift = c.fat ? (moving ? Math.abs(Math.sin(pt / 160)) * 1.5 : 0) : (moving ? Math.abs(Math.sin(pt / 70)) * 4 : 0);
+    const breathe = c.nap ? Math.sin(pt / 700) * 0.6 : 0;
+    drawSprite(cim, px, py + 3 - lift, (c.fat ? (c.nap ? 38 : 34) : 32) + breathe, c.face < 0);
+    if (c.nap) {
+      const zy = ((pt / 1200) % 1);
+      ctx.globalAlpha = 1 - zy; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(60,40,20,.5)'; ctx.lineWidth = 2; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.strokeText('z', px + 12 + zy * 6, py - 26 - zy * 14); ctx.fillText('z', px + 12 + zy * 6, py - 26 - zy * 14); ctx.globalAlpha = 1;
+    }
+    return;
+  }
   ctx.save(); ctx.translate(px, py);
   ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, 0, c.fat ? 13 : 10, c.fat ? 5 : 3.5, 0, 0, 7); ctx.fill();
   ctx.scale(c.face, 1);
@@ -591,6 +650,13 @@ function drawPerson(p, pt) {
   const [px, py] = P(p.x, p.y), d = p.def;
   const moving = pt >= p.pause && Math.hypot(p.tx - p.x, p.ty - p.y) > 0.05;
   const step = moving ? Math.sin(pt / 140) * 2.5 : 0;
+  const pim = spr('p-' + p.id);
+  if (pim) {
+    const h = 50, w = h * pim.naturalWidth / pim.naturalHeight;
+    drawSprite(pim, px, py + 4 - (moving ? Math.abs(step) * 0.4 : 0), w, p.face < 0);
+    drawBadge(p, px, py, pt);
+    return;
+  }
   ctx.save(); ctx.translate(px, py);
   ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 3.5, 0, 0, 7); ctx.fill();
   ctx.scale(p.face, 1);
@@ -610,8 +676,11 @@ function drawPerson(p, pt) {
     ctx.fillRect(-4.5, -39, 9, 6);
   }
   ctx.restore();
+  drawBadge(p, px, py, pt);
+}
+function drawBadge(p, px, py, pt) {
   if (p.badge) {
-    const y = py - 52 + Math.sin(pt / 300) * 2;
+    const y = py - 60 + Math.sin(pt / 300) * 2;
     ctx.fillStyle = p.badge === '✓' ? '#6BA43A' : '#E9A825';
     ctx.beginPath(); ctx.arc(px, y, 9, 0, 7); ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();

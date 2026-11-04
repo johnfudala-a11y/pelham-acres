@@ -5,7 +5,8 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.8';
+export const APP_VERSION = '0.9';
+import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -836,6 +837,7 @@ function onTap(sx, sy) {
 // ---------- boot ----------
 function afterLoad() { G.refreshOrders(); cam.z = innerWidth < 600 ? 0.8 : 1; centerOn(14, 13); refreshHud(); }
 initRender(cv);
+loadSprites();
 setCatGrid(G.objAt, c => {
   if (c.id !== 'ollie' || !Q.hasFlag('ollieBench')) return null;
   const b = G.findObj('bench'); return b ? { x: b.x + 0.5, y: b.y + 0.55 } : null;
