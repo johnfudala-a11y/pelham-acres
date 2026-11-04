@@ -165,6 +165,8 @@ export const BUILD = {
   clockTower:   { name: 'Clock Tower',   cat: 'Town', kind: 'civic', charm: 10, w: 2, h: 2, lvl: 10, cost: () => 1100, mats: { stone: 24, nails: 10 }, max: one, wall: '#D9CBB0', roof: '#4B4F5A', hgt: 84, icon: '🕰️' },
   bandstand:    { name: 'Bandstand',     cat: 'Town', kind: 'civic', charm: 8,  w: 2, h: 2, lvl: 11, cost: () => 1400, mats: { planks: 16 },            max: one, wall: '#FFFFFF', roof: '#2F6E8E', hgt: 22, icon: '🎶' },
 
+  station:      { name: 'Train Station', cat: 'Town', kind: 'station', w: 3, h: 2, lvl: 5, cost: () => 400, mats: { planks: 4, nails: 2 }, max: one, wall: '#B9573F', roof: '#3D4A57', hgt: 34, icon: '🚂', desc: 'Freight trains bring big contracts.' },
+
   path:    { name: 'Cobble Path', cat: 'Decor', kind: 'path',  w: 1, h: 1, lvl: 1, cost: () => 2,   max: inf, icon: '⬜' },
   fence:   { name: 'Fence',       cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 1, cost: () => 5,   max: inf, charm: 0, icon: '🚧' },
   flowers: { name: 'Flower Bed',  cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 2, cost: () => 15,  max: inf, charm: 1, icon: '🌷' },
@@ -205,6 +207,24 @@ VALUE.wood = 6; VALUE.stone = 8;
     }
   }
 }
+
+// ---------- Seasons (each lasts one real day, cycling) ----------
+export const SEASON_MS = 24 * 3600 * 1000;
+export const SEASONS = [
+  { name: 'Spring', icon: '🌸', crops: ['wheat', 'carrot', 'strawberry', 'lavender'],
+    ground: ['#93C75C', '#8EC257'], bg: '#64934A', leaf: ['#4E8F35', '#6BB247'], accent: '#F4B6C8' },
+  { name: 'Summer', icon: '☀️', crops: ['corn', 'tomato', 'sunflower', 'blueberry', 'sugarcane'],
+    ground: ['#8BBD52', '#86B84F'], bg: '#5E8C3E', leaf: ['#3E7D2E', '#58A03C'], accent: '#E2483A' },
+  { name: 'Fall', icon: '🍂', crops: ['pumpkin', 'potato', 'soybean', 'cotton'],
+    ground: ['#A9B75E', '#A3B158'], bg: '#7A8A45', leaf: ['#C8642A', '#E39A35'], accent: '#B8432F' },
+  { name: 'Winter', icon: '❄️', crops: ['cocoa', 'coffee', 'carrot', 'potato'],
+    ground: ['#E9EFF3', '#E1E9EE'], bg: '#BFCBD3', leaf: ['#3E6B4A', '#F4F7FA'], accent: '#FFFFFF' },
+];
+export const IN_SEASON_SPEED = 0.75;   // in-season crops grow 25% faster
+export const IN_SEASON_BONUS = 1.2;    // and pay 20% more in orders
+
+// ---------- Freight train ----------
+export const TRAIN = { stay: 45 * 60000, away: 15 * 60000, crates: 6 };
 
 export const xpFor = L => Math.round(10 * Math.pow(L, 1.6) + 12);
 

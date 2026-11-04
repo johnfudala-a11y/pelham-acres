@@ -1,6 +1,6 @@
 // Pelham Acres service worker: network-first so updates show up right away,
 // with a cached copy so the game still opens offline.
-const CACHE = 'pelham-acres-v5';
+const CACHE = 'pelham-acres-v6';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/main.js', 'js/game.js', 'js/render.js', 'js/data.js', 'js/audio.js', 'js/story.js', 'js/quests.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', e => {

@@ -1,10 +1,19 @@
 // Pelham Acres — game state and rules. All timers are wall-clock timestamps,
 // so progress continues while the app is closed.
-import { CROPS, CROP_YIELD, ANIMALS, RECIPES, BUILD, VALUE, MAP, MATS, DECOR_CHARM_CAP, xpFor, MASTERY, MAX_BLVL, upgradeCost, NO_ORDER } from './data.js';
+import { CROPS, CROP_YIELD, ANIMALS, RECIPES, BUILD, VALUE, MAP, MATS, DECOR_CHARM_CAP, xpFor, MASTERY, MAX_BLVL, upgradeCost, NO_ORDER,
+         SEASONS, SEASON_MS, IN_SEASON_SPEED, IN_SEASON_BONUS, TRAIN } from './data.js';
 
 export let S = null;
 export const now = () => Date.now();
 export const hooks = { onLevel: null, onMastery: null, onStat: null };
+
+// ---------- Seasons: one real day each, changing at local midnight ----------
+const localT = t => t - new Date(t).getTimezoneOffset() * 60000;
+export const seasonIndex = (t = now()) => (S && S.debugSeason != null) ? S.debugSeason : Math.floor(localT(t) / SEASON_MS) % 4;
+export const season = () => SEASONS[seasonIndex()];
+export function seasonEndsAt() { const t = now(), lt = localT(t); return t + (SEASON_MS - (lt % SEASON_MS)); }
+export const inSeason = c => season().crops.includes(c);
+export const cropTime = c => CROPS[c].time * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1);
 
 // ---------- Stats (used by quests) ----------
 export function stat(k, n = 1) { S.stats = S.stats || {}; S.stats[k] = (S.stats[k] || 0) + n; hooks.onStat && hooks.onStat(k); }
@@ -127,7 +136,7 @@ export function plant(o, c) {
   if (S.level < cr.lvl) return 'locked';
   if (S.coins < cr.cost) return 'coins';
   S.coins -= cr.cost;
-  o.crop = c; o.start = now(); o.end = now() + cr.time * 1000 * masteryTime('crop', c);
+  o.crop = c; o.start = now(); o.end = now() + cropTime(c) * 1000;
   stat('plant');
   return 'ok';
 }
@@ -290,16 +299,24 @@ function obtainable() {
   }
   return [...set];
 }
+// pick one item, favoring in-season crops
+function pickWeighted(pool) {
+  const w = pool.map(id => inSeason(id) ? 3 : 1), tot = w.reduce((a, b) => a + b, 0);
+  let r = Math.random() * tot;
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool.splice(i, 1)[0]; }
+  return pool.pop();
+}
+const itemValue = id => VALUE[id] * (inSeason(id) ? IN_SEASON_BONUS : 1);
 export function genOrder() {
   const pool = obtainable();
   const maxK = Math.min(3, 1 + Math.floor(S.level / 2), pool.length);
   const k = 1 + Math.floor(Math.random() * maxK);
   const items = {}; let val = 0;
   for (let i = 0; i < k; i++) {
-    const id = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    const id = pickWeighted(pool);
     const isCrop = !!CROPS[id];
     const q = isCrop ? 2 + Math.floor(Math.random() * 5) : 1 + Math.floor(Math.random() * (VALUE[id] < 40 ? 3 : 2));
-    items[id] = q; val += VALUE[id] * q;
+    items[id] = q; val += itemValue(id) * q;
   }
   const names = ['Mrs. Abernathy', 'Farmer Joe', 'The Pelham Diner', 'Old Tom', 'Rosa at the Inn', 'The Mayor', 'Grandma Ellis', 'Pastor Lyle', 'The Hendersons', 'Coach Brady', 'Dottie', 'Mr. Finch'];
   return {
@@ -329,6 +346,53 @@ export function deliver(i) {
 }
 export function skipOrder(i) { S.orders[i] = { wait: now() + 30000 }; }
 export const readyOrders = () => S.orders.filter(o => !o.wait && hasAll(o.items)).length;
+
+// ---------- Freight train ----------
+function genCrates() {
+  const out = [];
+  for (let i = 0; i < TRAIN.crates; i++) {
+    const pool = obtainable();
+    const id = pickWeighted(pool);
+    const isCrop = !!CROPS[id];
+    const q = isCrop ? 6 + Math.floor(Math.random() * 7) : 2 + Math.floor(Math.random() * (VALUE[id] < 40 ? 4 : 2));
+    const v = itemValue(id) * q;
+    out.push({ id, q, coins: Math.round(v * 1.4 * (1 + charm() / 100)), xp: Math.round(v / 4) + 2, filled: false });
+  }
+  return out;
+}
+// Returns { status: 'here', train } or { status: 'away', arrive }.
+export function trainState(o) {
+  const t = now();
+  if (!o.train) o.train = { arrive: t, depart: t + TRAIN.stay, crates: genCrates(), sent: false };
+  const tr = o.train;
+  if (t < tr.depart) return { status: 'here', train: tr };
+  const cycle = TRAIN.stay + TRAIN.away;
+  const k = Math.floor((t - tr.depart) / cycle);
+  const nextArrive = tr.depart + k * cycle + TRAIN.away;
+  if (t < nextArrive) return { status: 'away', arrive: nextArrive };
+  o.train = { arrive: nextArrive, depart: nextArrive + TRAIN.stay, crates: genCrates(), sent: false };
+  return { status: 'here', train: o.train };
+}
+export function fillCrate(o, i) {
+  const st = trainState(o); if (st.status !== 'here') return 'gone';
+  const c = st.train.crates[i]; if (!c || c.filled) return 'done';
+  if (have(c.id) < c.q) return 'missing';
+  takeAll({ [c.id]: c.q });
+  c.filled = true; S.coins += c.coins; addXP(c.xp);
+  stat('crate');
+  return 'ok';
+}
+export function trainBonus(tr) { return { coins: Math.round(tr.crates.reduce((s, c) => s + c.coins, 0) * 0.5), hg: 2, planks: 3, nails: 3 }; }
+export function sendTrain(o) {
+  const st = trainState(o); if (st.status !== 'here') return null;
+  const tr = st.train; if (!tr.crates.every(c => c.filled)) return null;
+  const b = trainBonus(tr);
+  S.coins += b.coins; S.hg += b.hg; addItem('planks', b.planks); addItem('nails', b.nails);
+  tr.depart = now(); tr.sent = true;
+  stat('train');
+  addXP(25);
+  return b;
+}
 
 // ---------- Hourglass (earned speed-up; never sold) ----------
 export function useHourglass(o) {

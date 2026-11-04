@@ -4,7 +4,7 @@ import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
-export const APP_VERSION = '0.5';
+export const APP_VERSION = '0.6';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -100,6 +100,8 @@ function refreshHud() {
   $('#store').textContent = `${used}/${cap}`;
   $('#storePill').classList.toggle('full', used >= cap);
   const r = G.readyOrders(); const b = $('#ordBadge'); b.hidden = !r; b.textContent = r;
+  const se = G.season();
+  $('#seasonPill').innerHTML = `${se.icon} ${se.name} <small>${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</small>`;
 }
 
 // ---------- mode bar (planting / placing) ----------
@@ -170,6 +172,16 @@ function act(el) {
   switch (d.act) {
     case 'closeModal': closeModal(); setTimeout(showLevelUps, 200); break;
     case 'claimQuest': claimQuest(d.id); return;
+    case 'fillCrate': {
+      const r = G.fillCrate(o, +d.i);
+      if (r === 'ok') { sfx.deliver(); } else { sfx.error(); toast(r === 'missing' ? "You don't have enough yet" : 'The train already left'); }
+      break;
+    }
+    case 'sendTrain': {
+      const b = G.sendTrain(o);
+      if (b) { sfx.levelUp(); toast(`Toot toot! Bonus: +${fmtN(b.coins)} 🪙 +${b.hg} ⏳ +${b.planks} planks +${b.nails} nails`); }
+      break;
+    }
     case 'showQuest': questIntro(QUEST_BY_ID[d.id]); return;
     case 'endPlant': endPlant(); break;
     case 'confirmPlace': confirmPlace(); break;
@@ -303,6 +315,7 @@ function tapObject(o) {
     case 'pen': collectPen(o); return openSheet(b.name, () => penSheet(o), o);
     case 'house': if (collectHouse(o)) { G.save(); return; } return openSheet(b.name, () => houseSheet(o), o);
     case 'storage': return openSheet('Barn', () => barnSheet(), o);
+    case 'station': sfx.tap(); return openSheet('Train Station', () => stationSheet(o), o);
     case 'obstacle': return openSheet(`Clear ${b.name.toLowerCase()}`, () => obstacleSheet(o), o);
     default: return openSheet(b.name, () => infoSheet(o), o);
   }
@@ -317,12 +330,13 @@ function harvestField(o) {
 
 // ---------- sheet contents ----------
 function cropPicker() {
-  return `<p class="sub">Pick a crop, then tap or drag across empty fields to plant it. Harvest crops to earn mastery stars.</p><div class="grid">` +
+  const se = G.season();
+  return `<p class="sub">Pick a crop, then tap or drag across empty fields to plant it. ${se.icon} ${se.name} crops grow 25% faster and pay more in orders.</p><div class="grid">` +
     Object.entries(CROPS).map(([k, c]) => {
       const locked = G.S.level < c.lvl;
-      return `<div class="card ${locked ? 'locked' : ''}"><div class="big">${c.icon}</div><div class="nm">${c.name}</div>
+      return `<div class="card ${locked ? 'locked' : ''}"><div class="big">${c.icon}</div><div class="nm">${c.name}${G.inSeason(k) ? ` <span title="In season">${se.icon}</span>` : ''}</div>
         ${locked ? '' : starStr('crop', k)}
-        <div class="meta">⏱ ${secs(Math.round(c.time * G.masteryTime('crop', k)))} · 🪙 ${c.cost} · ×${CROP_YIELD}</div>
+        <div class="meta">⏱ ${secs(Math.round(G.cropTime(k)))} · 🪙 ${c.cost} · ×${CROP_YIELD}</div>
         ${locked ? `<div class="meta">🔒 Level ${c.lvl}</div>` : `<button class="btn sm" data-act="pickCrop" data-c="${k}">Plant</button>`}</div>`;
     }).join('') + '</div>';
 }
@@ -421,7 +435,7 @@ function shopSheet() {
     const block = G.buyBlock(k);
     const cost = b.cost(n);
     html += `<div class="card ${locked ? 'locked' : ''}"><div class="big">${b.icon}</div><div class="nm">${b.name}</div>
-      <div class="meta">${b.kind === 'house' ? `${b.rent}🪙 / ${secs(b.period)}` : b.kind === 'civic' || b.charm ? `+${b.charm} charm` : b.kind === 'pen' ? `${ANIMALS[b.animal].name}s` : b.kind === 'producer' ? `${RECIPES[k].length} recipes` : b.desc || ''}</div>
+      <div class="meta">${b.desc && b.kind === 'station' ? b.desc : b.kind === 'house' ? `${b.rent}🪙 / ${secs(b.period)}` : b.kind === 'civic' || b.charm ? `+${b.charm} charm` : b.kind === 'pen' ? `${ANIMALS[b.animal].name}s` : b.kind === 'producer' ? `${RECIPES[k].length} recipes` : b.desc || ''}</div>
       ${locked ? `<div class="meta">🔒 Level ${b.lvl}</div>` : n >= mx ? `<div class="meta">✔ Owned${mx > 1 && mx < Infinity ? ` ${n}/${mx}` : ''}</div>` :
       `<div class="row" style="justify-content:center"><span class="req ${G.S.coins >= cost ? 'ok' : 'no'}">🪙 ${cost}</span>${b.mats ? reqs(b.mats) : ''}</div>
        ${mx < Infinity && mx > 1 ? `<div class="meta">${n}/${mx}</div>` : ''}
@@ -454,6 +468,23 @@ function menuSheet() {
     <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
     <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
 }
+// ---------- freight train ----------
+function stationSheet(o) {
+  const st = G.trainState(o);
+  if (st.status === 'away') return `<div style="font-size:48px;text-align:center">🛤️</div><p>The train is out on its route.</p>
+    <p>Next train arrives in <b data-end="${st.arrive}">${fmtT(st.arrive - now())}</b></p><p class="sub">Trains stay for 45 minutes. Stock up on goods while you wait!</p>
+    <br><button class="btn alt sm" data-act="move">Move</button>`;
+  const tr = st.train, all = tr.crates.every(c => c.filled), bonus = G.trainBonus(tr);
+  return `<p>🚂 Departs in <b data-end="${tr.depart}">${fmtT(tr.depart - now())}</b></p>
+    <p class="sub">Fill crates for coins and XP. Fill all ${tr.crates.length} and send the train off for a bonus: 🪙 ${fmtN(bonus.coins)} · ⏳ ${bonus.hg} · ${ic('planks')} ${bonus.planks} · ${ic('nails')} ${bonus.nails}</p>
+    <div class="grid">${tr.crates.map((c, i) => `<div class="card" style="${c.filled ? 'background:#EEF7E2;border-color:#9CCB6E' : ''}">
+      <div class="big">${c.filled ? '✅' : ic(c.id)}</div><div class="nm">${c.q}× ${nm(c.id)}</div>
+      <div class="meta">🪙 ${fmtN(c.coins)} · ⭐ ${c.xp}</div>
+      ${c.filled ? '<div class="meta">Loaded</div>' : `${req(c.id, c.q)}<button class="btn sm ${G.have(c.id) >= c.q ? '' : 'off'}" data-act="fillCrate" data-i="${i}">Load</button>`}</div>`).join('')}</div>
+    <br>${all ? '<button class="btn gold wide" data-act="sendTrain">🚂 Send it off! Collect bonus</button>' : ''}
+    <br><button class="btn alt sm" data-act="move">Move</button>`;
+}
+
 // ---------- quests & townsfolk ----------
 function rewardLine(r) {
   const parts = [];

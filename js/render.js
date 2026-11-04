@@ -1,7 +1,7 @@
 // Pelham Acres — isometric canvas renderer. Placeholder art drawn in code;
 // later each type can be swapped for an AI-generated sprite via SPRITES.
 import { TW, TH, MAP, BUILD, CROPS, ITEMS } from './data.js';
-import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal } from './game.js';
+import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState } from './game.js';
 
 export const cam = { x: 0, y: 0, z: 1 };
 export const view = { ghost: null, floaters: [], plantCrop: null };
@@ -144,10 +144,45 @@ function drawTree(o, t) {
   const v = hash(o.id), s = 0.85 + v * 0.35, sway = Math.sin(t / 900 + o.id) * 1.2;
   ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(cx + 4, cy + 2, 16 * s, 7 * s, 0, 0, 7); ctx.fill();
   ctx.fillStyle = '#6D4C30'; ctx.fillRect(cx - 3, cy - 18 * s, 6, 18 * s);
-  const g1 = v < 0.5 ? '#3E7D2E' : '#356F2A', g2 = v < 0.5 ? '#58A03C' : '#4C9136';
+  const se = season(), si = SEASONS_IDX(se);
+  let g1 = se.leaf[0], g2 = se.leaf[1];
+  if (si === 2 && v > 0.6) { g1 = '#B8432F'; g2 = '#D8673A'; }          // fall: some trees go red
+  if (si === 1 && v < 0.5) { g1 = '#356F2A'; g2 = '#4C9136'; }
   ctx.fillStyle = g1; ctx.beginPath(); ctx.arc(cx + sway, cy - 30 * s, 17 * s, 0, 7); ctx.fill();
-  ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(cx - 5 * s + sway, cy - 35 * s, 9 * s, 0, 7); ctx.fill();
-  if (v > 0.8) { ctx.fillStyle = '#E2483A'; for (const [dx, dy] of [[6, -26], [-8, -24], [2, -40]]) { ctx.beginPath(); ctx.arc(cx + dx * s + sway, cy + dy * s, 2.4, 0, 7); ctx.fill(); } }
+  if (si === 3) { // winter: snow-capped evergreen look
+    ctx.fillStyle = '#F4F7FA'; ctx.beginPath(); ctx.arc(cx + sway, cy - 36 * s, 12 * s, Math.PI, 0); ctx.fill();
+  } else {
+    ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(cx - 5 * s + sway, cy - 35 * s, 9 * s, 0, 7); ctx.fill();
+  }
+  const dots = si === 0 ? (v > 0.3 ? '#F4B6C8' : null) : si === 1 ? (v > 0.8 ? '#E2483A' : null) : null;
+  if (dots) { ctx.fillStyle = dots; for (const [dx, dy] of [[6, -26], [-8, -24], [2, -40], [-2, -30], [9, -35]]) { ctx.beginPath(); ctx.arc(cx + dx * s + sway, cy + dy * s, 2.2, 0, 7); ctx.fill(); } }
+}
+const SEASONS_IDX = se => ['Spring', 'Summer', 'Fall', 'Winter'].indexOf(se.name);
+function drawTrain(o, b, t) {
+  const st = trainState(o);
+  if (st.status !== 'here') return;
+  // a little freight train parked along the front of the station
+  const cars = ['#2F3E46', '#B8432F', '#3A6EA5', '#6B8E23', '#C9A27A'];
+  for (let i = 0; i < cars.length; i++) {
+    const gx = o.x + b.w + 0.15, gy = o.y - 0.6 + i * 0.75;
+    const filled = i === 0 || (st.train.crates[i - 1] && st.train.crates[i - 1].filled);
+    drawBoxPlain(gx, gy, 0.55, 0.6, i === 0 ? 16 : 11, filled ? cars[i] : '#9A978F');
+    if (i === 0) { const [sx, sy] = P(gx + 0.3, gy + 0.2); ctx.fillStyle = `rgba(240,240,240,${0.5 + 0.3 * Math.sin(t / 300)})`; ctx.beginPath(); ctx.arc(sx, sy - 24 - (t / 40 % 10), 4, 0, 7); ctx.fill(); }
+  }
+}
+// falling snow / leaves / petals, drawn in screen space
+function drawWeather(pt) {
+  const si = SEASONS_IDX(season());
+  if (si === 1) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const n = si === 3 ? 70 : 18;
+  for (let i = 0; i < n; i++) {
+    const r1 = hash(i * 7 + 1), r2 = hash(i * 13 + 5), sp = 20 + r2 * 30;
+    const y = ((r1 * H + pt / 1000 * sp) % (H + 20)) - 10;
+    const x = (r2 * W + Math.sin(pt / 1500 + i) * 30 + pt / 1000 * (si === 3 ? 4 : 15)) % W;
+    if (si === 3) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(x, y, 1.5 + r1 * 2, 0, 7); ctx.fill(); }
+    else { ctx.fillStyle = si === 0 ? 'rgba(244,182,200,.85)' : (i % 2 ? 'rgba(216,103,58,.85)' : 'rgba(233,168,37,.85)'); ctx.save(); ctx.translate(x, y); ctx.rotate(pt / 600 + i); ctx.beginPath(); ctx.ellipse(0, 0, 4, 2, 0, 0, 7); ctx.fill(); ctx.restore(); }
+  }
 }
 function drawRock(o) {
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5), v = hash(o.id + 7), s = 0.8 + v * 0.4;
@@ -260,6 +295,9 @@ function drawStatus(o, b, t) {
     else if (o.animals.length && o.animals.every(an => animalState(an) === 'hungry')) bubble(x, y, ITEMS[a.feed].icon);
   } else if (b.kind === 'house') {
     if (rentDue(o) > 0) bubble(x, y, '🪙');
+  } else if (b.kind === 'station') {
+    const st = trainState(o);
+    if (st.status === 'here') bubble(x, y, st.train.crates.every(c => c.filled) ? '✅' : '📦');
   }
 }
 
@@ -268,7 +306,8 @@ let drawList = [];
 export function draw() {
   const t = now(), pt = performance.now();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#5E8C3E'; ctx.fillRect(0, 0, W, H);
+  const se = season();
+  ctx.fillStyle = se.bg; ctx.fillRect(0, 0, W, H);
   ctx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * (W / 2 + cam.x), dpr * (H / 2 + cam.y));
   ctx.imageSmoothingQuality = 'high';
 
@@ -282,7 +321,7 @@ export function draw() {
     const [cx, cy] = P(gx + 0.5, gy + 0.5);
     if (!vis(cx, cy)) continue;
     const v = hash(gx * 97 + gy * 13);
-    poly(diamond(gx, gy, 1, 1), (gx + gy) % 2 ? (v < 0.5 ? '#8DBF55' : '#8BBD52') : (v < 0.5 ? '#86B84F' : '#84B64C'));
+    poly(diamond(gx, gy, 1, 1), se.ground[(gx + gy) % 2], v < 0.5 ? null : 'rgba(0,0,0,0.025)');
   }
   ctx.restore();
   // map edge
@@ -322,6 +361,7 @@ export function draw() {
 
   // floaters
   view.floaters = view.floaters.filter(f => pt - f.t0 < 1300);
+  ctx.save();
   for (const f of view.floaters) {
     const k = (pt - f.t0) / 1300;
     ctx.globalAlpha = 1 - k * k;
@@ -330,6 +370,8 @@ export function draw() {
     ctx.strokeText(f.text, f.px, f.py - 30 - k * 36); ctx.fillStyle = f.color; ctx.fillText(f.text, f.px, f.py - 30 - k * 36);
     ctx.globalAlpha = 1;
   }
+  ctx.restore();
+  drawWeather(pt);
 }
 
 function drawObj(o, t) {
@@ -351,6 +393,7 @@ function drawObj(o, t) {
     default:
       drawBox(o.x, o.y, b.w, b.h, b.hgt || 30, b.wall, b.roof, 18 + (b.w + b.h) * 3, b.icon);
       if (b.kind === 'civic') drawCivicExtras(o, b, t);
+      if (b.kind === 'station') drawTrain(o, b, t);
       if ((o.lvl || 1) > 1) {
         const [lx, ly] = P(o.x + b.w, o.y + b.h);
         ctx.fillStyle = '#E9A825'; ctx.beginPath(); ctx.arc(lx - 8, ly - 10, 8, 0, 7); ctx.fill();

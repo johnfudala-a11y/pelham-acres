@@ -128,6 +128,7 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
 .goal.done { color: #2F5A12; }
 .say { background: var(--paper2); border: 2px solid var(--edge); border-radius: 16px; padding: 12px 14px; text-align: left; font-size: 16px; line-height: 1.45; margin: 10px 0; position: relative; }
 .portrait { font-size: 56px; line-height: 1; }
+@media (max-width: 700px) { #seasonPill small { display: none; } }
 @media (max-width: 520px) {
   #toolbar { gap: 6px; }
   .tb { width: 54px; height: 56px; font-size: 22px; border-radius: 16px; }
