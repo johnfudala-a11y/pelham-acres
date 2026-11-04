@@ -13,7 +13,10 @@ export const seasonIndex = (t = now()) => (S && S.debugSeason != null) ? S.debug
 export const season = () => SEASONS[seasonIndex()];
 export function seasonEndsAt() { const t = now(), lt = localT(t); return t + (SEASON_MS - (lt % SEASON_MS)); }
 export const inSeason = c => season().crops.includes(c);
-export const cropTime = c => CROPS[c].time * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1);
+// Overall pace: every crop, recipe and animal takes this many times its base time (1.25 = 20% slower).
+export const TIME_SCALE = 1.25;
+export const cropTime = c => CROPS[c].time * TIME_SCALE * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1);
+export const animalTime = (o, a) => a.time * TIME_SCALE * speedOf(o);
 
 // ---------- Stats (used by quests) ----------
 export function stat(k, n = 1) { S.stats = S.stats || {}; S.stats[k] = (S.stats[k] || 0) + n; hooks.onStat && hooks.onStat(k); }
@@ -98,7 +101,16 @@ export function addObj(t, x, y, noRebuild) {
   if (!noRebuild) rebuildGrid();
   return o;
 }
-export function moveObj(o, x, y) { o.x = x; o.y = y; rebuildGrid(); }
+// Buildings can be moved once an hour; small things (fields, paths, decorations) move freely.
+export const MOVE_COOLDOWN = 60 * 60 * 1000;
+export const moveLimited = o => !['field', 'path', 'decor'].includes(BUILD[o.t].kind);
+export const moveReadyAt = o => (moveLimited(o) && o.movedAt ? o.movedAt + MOVE_COOLDOWN : 0);
+export function moveObj(o, x, y) {
+  if (o.x === x && o.y === y) return; // put back where it was: no cooldown
+  o.x = x; o.y = y;
+  if (moveLimited(o)) o.movedAt = now();
+  rebuildGrid();
+}
 export const count = t => S.objs.reduce((n, o) => n + (o.t === t ? 1 : 0), 0);
 export const findObj = t => S.objs.find(o => o.t === t);
 
@@ -180,7 +192,7 @@ export function fertilize(o) {
 
 // ---------- Producers ----------
 export const slots = o => 3 + blvl(o) - 1 + (o.extraSlots || 0);
-export const recipeTime = (o, r) => r.time * speedOf(o) * masteryTime('recipe', r.out);
+export const recipeTime = (o, r) => r.time * TIME_SCALE * speedOf(o) * masteryTime('recipe', r.out);
 export function queueJob(o, ri) {
   const r = RECIPES[o.t][ri];
   if (S.level < r.lvl) return 'locked';
@@ -224,7 +236,7 @@ export const animalState = an => an.end === 0 ? 'hungry' : (an.end <= now() ? 'r
 export function feedAll(o) {
   const a = penAnimal(o); let fed = 0;
   for (const an of o.animals) {
-    if (an.end === 0 && have(a.feed) > 0) { takeAll({ [a.feed]: 1 }); an.end = now() + a.time * 1000 * speedOf(o); fed++; }
+    if (an.end === 0 && have(a.feed) > 0) { takeAll({ [a.feed]: 1 }); an.end = now() + animalTime(o, a) * 1000; fed++; }
   }
   if (fed) stat('feed', fed);
   return fed;

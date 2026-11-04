@@ -248,8 +248,8 @@ export const xpFor = L => Math.round(10 * Math.pow(L, 1.6) + 12);
 // What unlocks at a level (for the level-up screen and shop).
 export function unlocksAt(L) {
   const out = [];
-  for (const k in CROPS) if (CROPS[k].lvl === L) out.push({ icon: CROPS[k].icon, name: CROPS[k].name + ' (crop)' });
-  for (const k in BUILD) if (BUILD[k].lvl === L && BUILD[k].cat) out.push({ icon: BUILD[k].icon, name: BUILD[k].name });
-  for (const b in RECIPES) for (const r of RECIPES[b]) if (r.lvl === L && BUILD[b].lvl !== L) out.push({ icon: ITEMS[r.out].icon, name: ITEMS[r.out].name + ' recipe' });
+  for (const k in CROPS) if (CROPS[k].lvl === L) out.push({ id: k, icon: CROPS[k].icon, name: CROPS[k].name + ' (crop)' });
+  for (const k in BUILD) if (BUILD[k].lvl === L && BUILD[k].cat) out.push({ id: k, icon: BUILD[k].icon, name: BUILD[k].name });
+  for (const b in RECIPES) for (const r of RECIPES[b]) if (r.lvl === L && BUILD[b].lvl !== L) out.push({ id: r.out, icon: ITEMS[r.out].icon, name: ITEMS[r.out].name + ' recipe' });
   return out;
 }

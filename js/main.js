@@ -1,19 +1,38 @@
 // Pelham Acres — input, menus, and the game loop.
-import { BUILD, CROPS, ITEMS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER } from './data.js';
+import { BUILD, CROPS, ITEMS, PRODUCTS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER } from './data.js';
 import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.15';
+export const APP_VERSION = '0.16';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
 
 const $ = s => document.querySelector(s);
 const now = G.now;
-const ic = id => ITEMS[id]?.icon || '❔';
-// painted crop picture for menus (falls back to the emoji if the image can't load)
-const icH = id => CROPS[id] ? `<img class="cimg" src="sprites/crop-${id}.webp" alt="${CROPS[id].name}" onerror="this.outerHTML='${CROPS[id].icon}'">` : ic(id);
+// ---------- painted art for menus (each falls back to its emoji if the picture can't load) ----------
+const em = id => ITEMS[id]?.icon || '❔';                       // plain-text emoji, for toasts and floaters
+const IMG = (src, fb, cls = 'ai') => `<img class="${cls}" src="${src}" alt="" draggable="false" onerror="this.replaceWith('${fb}')">`;
+const BUILD_SPR = new Set(['barn', 'feedMill', 'bakery', 'workshop', 'dairy', 'sugarMill', 'kitchen', 'loom', 'cafe', 'cottage', 'farmhouse', 'townhouse', 'manor',
+  'townHall', 'generalStore', 'schoolhouse', 'clockTower', 'bandstand', 'station', 'flowers', 'hedge', 'bench', 'lamp', 'pond', 'gazebo', 'fountain', 'windmill', 'coop', 'cowshed', 'sheepfold']);
+function art(id, cls) {
+  if (CROPS[id]) return IMG(`sprites/crop-${id}.webp`, CROPS[id].icon, cls);
+  if (PRODUCTS[id]) return IMG(`sprites/icon-${id}.webp`, PRODUCTS[id].icon, cls);
+  if (ANIMALS[id]) return IMG(`sprites/${id}.webp`, ANIMALS[id].icon, cls);
+  if (BUILD[id]) return IMG(BUILD_SPR.has(id) ? `sprites/${id}.webp` : `sprites/icon-${id}.webp`, BUILD[id].icon, cls);
+  return ITEMS[id]?.icon || '❔';
+}
+const ic = id => art(id);
+const icH = id => art(id);
+const ui = (n, fb) => IMG(`sprites/icon-${n}.webp`, fb, 'ui');
+const face = (pid, cls = 'face') => PEOPLE[pid] ? IMG(`sprites/p-${pid}.webp`, PEOPLE[pid].icon, cls) : ui('mail', '✉️');
+// order customers who are townsfolk get their portrait
+const WHO_PID = { 'Farmer Joe': 'joe', 'Old Tom': 'tom', 'Rosa at the Inn': 'rosa', 'The Mayor': 'hattie', 'Grandma Ellis': 'ellis', 'Dottie': 'dottie', 'Mr. Finch': 'finch' };
+// swap the coin / hourglass / star / energy emoji in menu HTML for painted icons
+// (fallbacks are empty so the swap never runs inside its own onerror attribute)
+const PAINT = [['🪙', ui('coin', '')], ['⏳', ui('hourglass', '')], ['⭐', ui('star', '')], ['⚡', ui('energy', '')]];
+const paint = html => PAINT.reduce((h, [e, im]) => h.split(e).join(im), html);
 const nm = id => ITEMS[id]?.name || id;
 function fmtT(ms) {
   let s = Math.max(0, Math.ceil(ms / 1000));
@@ -28,7 +47,7 @@ const secs = s => fmtT(s * 1000);
 // ---------- toast / modal ----------
 let toastTimer;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200); }
-function modal(html) { $('#modalCard').innerHTML = html; $('#modal').hidden = false; }
+function modal(html) { $('#modalCard').innerHTML = paint(html); $('#modal').hidden = false; }
 function closeModal() { $('#modal').hidden = true; }
 $('#modal').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) { act(a); } else if (e.target.id === 'modal') closeModal(); });
 
@@ -58,7 +77,7 @@ function showLevelUps() {
   const un = unlocksAt(L);
   sfx.levelUp();
   modal(`<div style="font-size:54px">🎉</div><h2>Level ${L}!</h2><p class="sub">+${L * 15} 🪙 &nbsp; +2 ⏳</p>
-    ${un.length ? `<b>New this level</b><div class="unlocks">${un.map(u => `<div>${u.icon} ${u.name}</div>`).join('')}</div>` : '<p>Keep growing Pelham Acres!</p>'}
+    ${un.length ? `<b>New this level</b><div class="unlocks">${un.map(u => `<div>${u.id && (BUILD[u.id] || ITEMS[u.id]) ? art(u.id) : u.icon} ${u.name}</div>`).join('')}</div>` : '<p>Keep growing Pelham Acres!</p>'}
     <button class="btn wide" data-act="closeModal">Hooray!</button>`);
   refreshHud();
 }
@@ -72,7 +91,12 @@ function openSheet(title, fn, obj = null) {
   renderSheet();
   $('#sheet').classList.add('open'); $('#sheet').setAttribute('aria-hidden', 'false'); document.body.classList.add('sheet-open');
 }
-function renderSheet() { if (sheetFn) $('#sheetBody').innerHTML = sheetFn(); }
+function renderSheet() {
+  if (!sheetFn) return;
+  const body = $('#sheetBody'), y = body.scrollTop;
+  body.innerHTML = paint(sheetFn());
+  body.scrollTop = y; // keep your place when the panel refreshes
+}
 function closeSheet() { sheetFn = null; sheetObj = null; $('#sheet').classList.remove('open'); $('#sheet').setAttribute('aria-hidden', 'true'); document.body.classList.remove('sheet-open'); }
 $('#sheetClose').addEventListener('click', () => { sfx.close(); closeSheet(); });
 $('#sheetBody').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) act(a); });
@@ -87,6 +111,12 @@ function liveUpdate() {
     el.style.width = Math.max(0, Math.min(100, (now() - s) / (e - s) * 100)) + '%';
   });
   if (rerender) renderSheet();
+}
+// Move button with the one-hour cooldown shown as a live countdown
+function moveBtn(o) {
+  const r = G.moveReadyAt(o);
+  if (r > now()) return `<button class="btn alt sm off" data-act="move">↔ Move again in <span data-end="${r}">${fmtT(r - now())}</span></button>`;
+  return `<button class="btn alt sm" data-act="move">↔ Move</button>${G.moveLimited(o) ? ' <span class="sub" style="margin:0">once an hour</span>' : ''}`;
 }
 const req = (id, n) => `<span class="req ${G.have(id) >= n ? 'ok' : 'no'}">${icH(id)} ${G.have(id)}/${n}</span>`;
 const reqs = r => Object.entries(r).map(([k, v]) => req(k, v)).join(' ');
@@ -139,7 +169,7 @@ function startPlacing(t, move = null) {
   view.ghost = { t, x, y, move, proto, ok: false };
   updateGhost();
   const repeat = !move && ['field', 'path', 'decor'].includes(b.kind);
-  setModeBar(`<span style="font-size:22px">${b.icon}</span><span class="msg">${move ? 'Move' : 'Place'} ${b.name} · drag it into position</span>
+  setModeBar(`<span style="font-size:22px">${b.icon}</span><span class="msg">${move ? 'Move' : 'Place'} ${b.name} · drag it into position${move && G.moveLimited(move) ? '<br><small>Once moved, it can move again in 1 hour</small>' : ''}</span>
     <button class="btn" data-act="confirmPlace">✔ ${move ? 'Move here' : 'Place'}</button><button class="btn alt" data-act="cancelPlace">${repeat ? 'Done' : 'Cancel'}</button>`);
 }
 function nearestFree(t, x0, y0) {
@@ -217,7 +247,11 @@ function act(el) {
     case 'feedAll': { const n = G.feedAll(o); if (n) { sfx.plant(); animalSound(o); } else { sfx.error(); toast(`No ${nm(G.penAnimal(o).feed)} — make some at the Feed Mill`); } break; }
     case 'collectAnimals': collectPen(o); break;
     case 'collectRent': collectHouse(o); break;
-    case 'move': startPlacing(o.t, o); return;
+    case 'move': {
+      const ready = G.moveReadyAt(o);
+      if (ready > now()) { sfx.error(); toast(`You can move this again in ${fmtT(ready - now())}`); return; }
+      startPlacing(o.t, o); return;
+    }
     case 'upgrade': {
       const r = G.upgradeBuilding(o);
       if (r === 'ok') { sfx.build(); toast(`${BUILD[o.t].name} upgraded to level ${G.blvl(o)}!`); floater(o.x + 1, o.y + 1, `⬆ Lv ${G.blvl(o)}`, '#FFE9A8'); }
@@ -234,7 +268,7 @@ function act(el) {
       const r = G.clearObstacle(o, d.act === 'clearTool');
       if (r.err) { sfx.error(); toast(r.err === 'tool' ? `No ${nm(G.toolFor(o))}. Make one at the Workshop.` : 'Not enough coins'); break; }
       sfx.clear();
-      floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${ic(r.drop.id)}` : '+2 XP');
+      floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${em(r.drop.id)}` : '+2 XP');
       closeSheet(); break;
     }
     case 'deliver': {
@@ -245,7 +279,8 @@ function act(el) {
     case 'skip': G.skipOrder(+d.i); break;
     case 'sell': { const c = G.sell(d.id, +d.n); if (c) { sfx.coin(); toast(`Sold for ${c} 🪙`); } break; }
     case 'upgradeBarn': if (G.upgradeBarn()) { sfx.build(); toast('Barn upgraded! +30 space'); } else { sfx.error(); toast('Need more coins or materials'); } break;
-    case 'tab': sfx.tap(); shopTab = d.tab; break;
+    case 'tab': sfx.tap(); shopTab = d.tab; $('#sheetBody').scrollTop = 0; break;
+    case 'btab': sfx.tap(); barnTab = d.tab; $('#sheetBody').scrollTop = 0; break;
     case 'buy': { const blk = G.buyBlock(d.t); if (blk) { sfx.error(); toast(blk); break; } sfx.tap(); startPlacing(d.t); return; }
     case 'export': { const ta = $('#saveText'); ta.value = G.exportSave(); ta.select(); try { navigator.clipboard.writeText(ta.value); toast('Save copied'); } catch (e) {} return; }
     case 'import': {
@@ -270,14 +305,14 @@ function act(el) {
 function collectProducer(o) {
   const { got, full } = G.collectJobs(o);
   if (got.length) sfx.collect();
-  got.forEach((j, i) => setTimeout(() => floater(o.x + 1, o.y + 1, `+${j.n}${ic(j.out)}`), i * 150));
+  got.forEach((j, i) => setTimeout(() => floater(o.x + 1, o.y + 1, `+${j.n}${em(j.out)}`), i * 150));
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got.length;
 }
 function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : sfx.baa)(); }
 function collectPen(o) {
   const { got, full } = G.collectAnimals(o);
-  if (got) { sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}${ic(G.penAnimal(o).product)}`); }
+  if (got) { sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}${em(G.penAnimal(o).product)}`); }
   if (o.animals.length) animalSound(o);
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got;
@@ -310,7 +345,7 @@ function petCat(c) {
     G.stat('pet'); G.stat('pet:milo');
     const finds = Object.keys(CROPS).filter(k => CROPS[k].lvl <= S.level).concat(['wood', 'wood', 'stone']);
     const id = finds[Math.floor(Math.random() * finds.length)];
-    if (Math.random() < 0.6 && G.addItem(id, 1)) { floater(c.x, c.y, `⚡ +1${ic(id)}`); toast(`Milo does zoomies and drops a ${nm(id).toLowerCase()} at your feet!`); }
+    if (Math.random() < 0.6 && G.addItem(id, 1)) { floater(c.x, c.y, `⚡ +1${em(id)}`); toast(`Milo does zoomies and drops a ${nm(id).toLowerCase()} at your feet!`); }
     else { floater(c.x, c.y, '⚡ zoomies!', '#FFFFFF'); toast('Milo does a lap of the whole farm at top speed.'); }
   }
   G.save(); refreshHud();
@@ -345,14 +380,16 @@ function harvestField(o) {
 // ---------- sheet contents ----------
 function cropPicker() {
   const se = G.season();
+  const all = Object.entries(CROPS), open = all.filter(([, c]) => G.S.level >= c.lvl), locked = all.filter(([, c]) => G.S.level < c.lvl);
+  // in-season crops first: they grow faster and pay more
+  open.sort((a, b) => G.inSeason(b[0]) - G.inSeason(a[0]));
   return `<p class="sub">Pick a crop, then tap or drag across empty fields to plant it. ${se.icon} ${se.name} crops grow 25% faster and pay more in orders.</p><div class="grid">` +
-    Object.entries(CROPS).map(([k, c]) => {
-      const locked = G.S.level < c.lvl;
-      return `<div class="card ${locked ? 'locked' : ''}"><div class="big">${icH(k)}</div><div class="nm">${c.name}${G.inSeason(k) ? ` <span title="In season">${se.icon}</span>` : ''}</div>
-        ${locked ? '' : starStr('crop', k)}
-        <div class="meta">⏱ ${secs(Math.round(G.cropTime(k)))} · 🪙 ${c.cost} · ×${CROP_YIELD}</div>
-        ${locked ? `<div class="meta">🔒 Level ${c.lvl}</div>` : `<button class="btn sm" data-act="pickCrop" data-c="${k}">Plant</button>`}</div>`;
-    }).join('') + '</div>';
+    open.map(([k, c]) => `<div class="card buy">${G.inSeason(k) ? `<span class="ribbon season">${se.icon} In season</span>` : ''}
+        <div class="big">${art(k)}</div><div class="nm">${c.name}</div>${starStr('crop', k)}
+        <div class="meta">⏱ ${secs(Math.round(G.cropTime(k)))} · 🪙 ${c.cost} · ×${CROP_YIELD} · have ${G.have(k)}</div>
+        <button class="btn sm" data-act="pickCrop" data-c="${k}">Plant</button></div>`).join('') + '</div>' +
+    (locked.length ? `<h3 class="soon">Coming later</h3><div class="soonlist">${locked.map(([k, c]) =>
+      `<div class="soonrow">${art(k, 'si')}<span class="nm">${c.name}</span><span class="spacer"></span><span class="lk">Level ${c.lvl}</span></div>`).join('')}</div>` : '');
 }
 function fieldInfo(o) {
   return `<p>${CROPS[o.crop].icon} Ready in <b data-end="${o.end}">${fmtT(o.end - now())}</b></p>
@@ -376,24 +413,29 @@ function producerSheet(o) {
   const running = o.jobs.some(j => j.end > t);
   let html = q + `<div class="row">${done ? '<button class="btn" data-act="collectJobs">Collect</button>' : ''}
     ${running ? `<button class="btn gold sm" data-act="hg">⏳ Finish current (${G.S.hg})</button>` : ''}</div><h3>Recipes</h3><div class="grid">`;
+  const soon = [];
   RECIPES[o.t].forEach((r, i) => {
-    const locked = G.S.level < r.lvl;
-    html += `<div class="card ${locked ? 'locked' : ''}"><div class="big">${ic(r.out)}</div><div class="nm">${nm(r.out)}${r.n > 1 ? ' ×' + r.n : ''}</div>
-      ${locked ? '' : starStr('recipe', r.out)}
-      <div class="meta">⏱ ${secs(Math.round(G.recipeTime(o, r)))}${NO_ORDER.has(r.out) ? '' : ` · worth ${VALUE[r.out]}🪙`}</div>
-      ${locked ? `<div class="meta">🔒 Level ${r.lvl}</div>` : `<div class="row" style="justify-content:center">${reqs(r.in)}</div>
-      <button class="btn sm ${G.hasAll(r.in) && o.jobs.length < n ? '' : 'off'}" data-act="make" data-i="${i}">Make</button>`}</div>`;
+    if (G.S.level < r.lvl) { soon.push(r); return; }
+    const can = G.hasAll(r.in) && o.jobs.length < n;
+    html += `<div class="card ${can ? 'buy' : 'short'}"><div class="big">${art(r.out)}</div><div class="nm">${nm(r.out)}${r.n > 1 ? ' ×' + r.n : ''}</div>
+      ${starStr('recipe', r.out)}
+      <div class="meta">⏱ ${secs(Math.round(G.recipeTime(o, r)))}${NO_ORDER.has(r.out) ? '' : ` · worth ${VALUE[r.out]}🪙`} · have ${G.have(r.out)}</div>
+      <div class="row reqs">${reqs(r.in)}</div>
+      <button class="btn sm ${can ? '' : 'off'}" data-act="make" data-i="${i}">Make</button></div>`;
   });
-  return html + '</div><h3>Upgrade</h3>' + upgradeBlock(o) + '<br><button class="btn alt sm" data-act="move">Move</button>';
+  html += '</div>';
+  if (soon.length) html += `<h3 class="soon">Coming later</h3><div class="soonlist">${soon.map(r =>
+    `<div class="soonrow">${art(r.out, 'si')}<span class="nm">${nm(r.out)}</span><span class="spacer"></span><span class="lk">Level ${r.lvl}</span></div>`).join('')}</div>`;
+  return html + '<h3>Upgrade</h3>' + upgradeBlock(o) + '<br>' + moveBtn(o);
 }
 function penSheet(o) {
   const b = BUILD[o.t], a = G.penAnimal(o), t = now();
   const hungry = o.animals.filter(x => G.animalState(x) === 'hungry').length;
   const ready = o.animals.filter(x => G.animalState(x) === 'ready').length;
-  let html = `<p class="sub">${a.name}s eat ${ic(a.feed)} ${nm(a.feed)} and produce ${ic(a.product)} ${nm(a.product)} every ${secs(a.time)}.</p><div class="queue" style="flex-wrap:wrap">`;
+  let html = `<p class="sub">${a.name}s eat ${ic(a.feed)} ${nm(a.feed)} and produce ${ic(a.product)} ${nm(a.product)} every ${secs(Math.round(G.animalTime(o, a)))}.</p><div class="queue" style="flex-wrap:wrap">`;
   o.animals.forEach(an => {
     const st = G.animalState(an);
-    html += `<div class="slot ${st === 'ready' ? 'done' : ''}">${a.icon}<small ${st === 'busy' ? `data-end="${an.end}"` : ''}>${st === 'hungry' ? 'hungry' : st === 'ready' ? 'ready!' : fmtT(an.end - t)}</small></div>`;
+    html += `<div class="slot ${st === 'ready' ? 'done' : ''} ${st === 'hungry' ? 'hungry' : ''}">${art(st === 'ready' ? a.product : b.animal)}<small ${st === 'busy' ? `data-end="${an.end}"` : ''}>${st === 'hungry' ? 'hungry' : st === 'ready' ? 'ready!' : fmtT(an.end - t)}</small></div>`;
   });
   for (let i = o.animals.length; i < G.penCap(o); i++) html += '<div class="slot"><small>empty</small></div>';
   html += `</div><div class="row">
@@ -401,7 +443,7 @@ function penSheet(o) {
     ${hungry ? `<button class="btn" data-act="feedAll">Feed ${hungry} (${req(a.feed, hungry)})</button>` : ''}
     ${o.animals.some(x => G.animalState(x) === 'busy') ? `<button class="btn gold sm" data-act="hg">⏳ Finish all (${G.S.hg})</button>` : ''}
     ${o.animals.length < G.penCap(o) ? `<button class="btn alt" data-act="buyAnimal">Buy ${a.name} · ${G.animalCost(o)}🪙</button>` : ''}
-    <span class="spacer"></span><button class="btn alt sm" data-act="move">Move</button></div>`;
+    <span class="spacer"></span>${moveBtn(o)}</div>`;
   if (!o.animals.length) html += `<p class="sub" style="margin-top:12px">Buy your first ${a.name.toLowerCase()} to get started.</p>`;
   return html + '<h3>Upgrade</h3>' + upgradeBlock(o);
 }
@@ -410,7 +452,7 @@ function houseSheet(o) {
   const next = o.last + (due + 1) * b.period * 1000;
   return `<p>Your neighbors pay <b>${rent} 🪙</b> rent every ${secs(b.period)} (holds up to ${G.RENT_CAP} payments).</p>
     ${due ? `<button class="btn" data-act="collectRent">Collect ${due * rent} 🪙</button>` : `<p>Next rent in <b data-end="${next}">${fmtT(next - now())}</b></p>`}
-    <h3>Upgrade</h3>${upgradeBlock(o)}<br><button class="btn alt sm" data-act="move">Move</button>`;
+    <h3>Upgrade</h3>${upgradeBlock(o)}<br>${moveBtn(o)}`;
 }
 function infoSheet(o) {
   const b = BUILD[o.t];
@@ -418,7 +460,7 @@ function infoSheet(o) {
   if (b.kind === 'civic') html += `<p>A proud landmark of ${G.S.town}. Adds <b>+${b.charm} charm</b>.</p>`;
   if (b.kind === 'decor') html += `<p>${b.charm ? `Adds +${b.charm} charm (decorations count up to ${DECOR_CHARM_CAP}).` : 'Purely for looks.'}</p>`;
   if (b.kind === 'path') html += '<p>A tidy cobblestone path.</p>';
-  html += `<p class="sub">Town charm: <b>${G.charm()}</b> → orders pay <b>+${G.charm()}%</b> coins.</p><button class="btn alt sm" data-act="move">Move</button>`;
+  html += `<p class="sub">Town charm: <b>${G.charm()}</b> → orders pay <b>+${G.charm()}%</b> coins.</p>${moveBtn(o)}`;
   return html;
 }
 function obstacleSheet(o) {
@@ -429,44 +471,82 @@ function obstacleSheet(o) {
     <button class="btn alt ${G.S.coins >= c ? '' : 'off'}" data-act="clear">Pay ${c} 🪙</button></div>
     <p class="sub">${nm(tool)}s are made at the Workshop from wood and stone.</p>`;
 }
+let barnTab = 'all';
 function barnSheet() {
-  const used = G.storageUsed(), cap = G.storageCap(), up = G.barnUpgradeCost();
-  const items = Object.entries(G.S.inv).filter(([, n]) => n > 0).sort((a, b) => (MATS.has(a[0]) - MATS.has(b[0])) || a[0].localeCompare(b[0]));
-  let html = `<p class="sub">Stored: <b>${used}/${cap}</b> (wood and stone don't take space)</p><div class="bar"><div style="width:${Math.min(100, used / cap * 100)}%"></div></div>
-    <h3>Upgrade barn (+30)</h3><div class="row"><span class="req ${G.S.coins >= up.coins ? 'ok' : 'no'}">🪙 ${up.coins}</span>${req('wood', up.wood)}${req('stone', up.stone)}
-    <button class="btn sm" data-act="upgradeBarn">Upgrade</button></div><h3>Your goods</h3>`;
-  if (!items.length) return html + '<p class="sub">Empty. Harvest some crops!</p>';
-  html += '<div class="inv">' + items.map(([id, n]) => `<div class="invrow"><span class="ic">${icH(id)}</span><div><div class="n">${n}</div><div class="nm">${nm(id)}</div></div><span class="spacer"></span>
-    <button class="btn sm alt" data-act="sell" data-id="${id}" data-n="1">Sell ${G.sellPrice(id)}🪙</button></div>`).join('') + '</div>';
+  const used = G.storageUsed(), cap = G.storageCap(), up = G.barnUpgradeCost(), full = used >= cap;
+  // what the townsfolk are asking for right now, so you know what to keep
+  const wanted = new Set();
+  for (const o of G.S.orders) if (!o.wait) for (const k in o.items) wanted.add(k);
+  for (const q of Q.activeQuests()) for (const g of q.goals) if (g.id && ITEMS[g.id]) wanted.add(g.id);
+  const cat = id => CROPS[id] ? 'crops' : MATS.has(id) || NO_ORDER.has(id) ? 'supplies' : 'goods';
+  const all = Object.entries(G.S.inv).filter(([, n]) => n > 0);
+  const counts = { all: all.length, crops: 0, goods: 0, supplies: 0 }; all.forEach(([id]) => counts[cat(id)]++);
+  const items = all.filter(([id]) => barnTab === 'all' || cat(id) === barnTab)
+    .sort((a, b) => wanted.has(b[0]) - wanted.has(a[0]) || b[1] - a[1] || nm(a[0]).localeCompare(nm(b[0])));
+  const TABS = [['all', 'All', 'barn'], ['crops', 'Crops', 'wheat'], ['goods', 'Goods', 'bread'], ['supplies', 'Supplies', 'planks']];
+  let html = `<div class="storebar ${full ? 'full' : ''}"><div class="row"><b>Barn space</b><span class="spacer"></span><b>${used} / ${cap}</b></div>
+    <div class="bar"><div style="width:${Math.min(100, used / cap * 100)}%"></div></div>
+    <div class="sub" style="margin:4px 0 0">${full ? 'Full! Sell extras or upgrade below.' : 'Wood, stone, tools and building supplies are kept in the toolshed and take no space.'}</div></div>
+    <div class="tabs">${TABS.map(([k, label, icon]) => `<button class="tab ${barnTab === k ? 'on' : ''}" data-act="btab" data-tab="${k}">${art(icon, 'ti')}<span>${label}</span><i class="tcount soft">${counts[k]}</i></button>`).join('')}</div>`;
+  if (!items.length) html += '<p class="sub">Nothing here yet. Harvest some crops!</p>';
+  else html += '<div class="inv">' + items.map(([id, n]) => `<div class="invrow ${wanted.has(id) ? 'wanted' : ''}">${art(id, 'iv')}<div class="grow"><div class="n">${n}× ${nm(id)}</div>
+    <div class="nm">${wanted.has(id) ? '<b class="tag">Wanted in town</b>' : `sells for ${G.sellPrice(id)}🪙`}</div></div>
+    <button class="btn sm alt" data-act="sell" data-id="${id}" data-n="1">Sell 1</button></div>`).join('') + '</div>';
+  html += `<h3>Upgrade barn (+30 space)</h3><div class="row"><span class="req ${G.S.coins >= up.coins ? 'ok' : 'no'}">🪙 ${fmtN(up.coins)}</span>${req('wood', up.wood)}${req('stone', up.stone)}
+    <button class="btn sm" data-act="upgradeBarn">Upgrade</button></div>`;
   return html;
 }
 let shopTab = 'Farm';
+// Shop status of one item: 'buy' (can build right now), 'short' (unlocked, missing coins/materials), 'owned' (at its limit), 'locked'
+function shopInfo(k) {
+  const b = BUILD[k], n = G.count(k), mx = b.max(G.S.level), noBp = b.needs && !Q.hasFlag(b.needs);
+  const locked = G.S.level < b.lvl || noBp;
+  const st = locked ? 'locked' : n >= mx ? 'owned' : G.buyBlock(k) ? 'short' : 'buy';
+  return { b, n, mx, noBp, st, isNew: !locked && n === 0 };
+}
+const SHOP_ICON = { Farm: 'field', Animals: 'coop', Production: 'bakery', Town: 'cottage', Decor: 'flowers' };
 function shopSheet() {
-  let html = `<div class="tabs">${SHOP_CATS.map(c => `<button class="tab ${c === shopTab ? 'on' : ''}" data-act="tab" data-tab="${c}">${c}</button>`).join('')}</div><div class="grid">`;
-  for (const k in BUILD) {
-    const b = BUILD[k]; if (b.cat !== shopTab) continue;
-    const n = G.count(k), mx = b.max(G.S.level), noBp = b.needs && !Q.hasFlag(b.needs), locked = G.S.level < b.lvl || noBp;
-    const block = G.buyBlock(k);
+  const keys = Object.keys(BUILD).filter(k => BUILD[k].cat);
+  const tabs = SHOP_CATS.map(c => {
+    const ready = keys.filter(k => BUILD[k].cat === c && shopInfo(k).st === 'buy').length;
+    return `<button class="tab ${c === shopTab ? 'on' : ''}" data-act="tab" data-tab="${c}">${art(SHOP_ICON[c], 'ti')}<span>${c}</span>${ready ? `<i class="tcount">${ready}</i>` : ''}</button>`;
+  }).join('');
+  const order = { buy: 0, short: 1, owned: 2, locked: 3 };
+  const list = keys.filter(k => BUILD[k].cat === shopTab).map(k => ({ k, ...shopInfo(k) }))
+    .sort((a, c) => order[a.st] - order[c.st] || (a.st === 'locked' ? a.b.lvl - c.b.lvl : 0));
+  const what = b => b.kind === 'station' ? b.desc : b.kind === 'house' ? `${b.rent}🪙 every ${secs(b.period)}` : b.kind === 'civic' || b.charm ? `+${b.charm} charm` :
+    b.kind === 'pen' ? `${ANIMALS[b.animal].name}s · ${em(ANIMALS[b.animal].product)}` : b.kind === 'producer' ? `${RECIPES[b.id].length} recipes` : b.desc || '';
+  const card = ({ k, b, n, mx, st, isNew }) => {
     const cost = b.cost(n);
-    html += `<div class="card ${locked ? 'locked' : ''}"><div class="big">${b.icon}</div><div class="nm">${b.name}</div>
-      <div class="meta">${b.desc && b.kind === 'station' ? b.desc : b.kind === 'house' ? `${b.rent}🪙 / ${secs(b.period)}` : b.kind === 'civic' || b.charm ? `+${b.charm} charm` : b.kind === 'pen' ? `${ANIMALS[b.animal].name}s` : b.kind === 'producer' ? `${RECIPES[k].length} recipes` : b.desc || ''}</div>
-      ${locked ? `<div class="meta">${noBp && G.S.level >= b.lvl ? '🗺️ ' + b.needsText : '🔒 Level ' + b.lvl}</div>` : n >= mx ? `<div class="meta">✔ Owned${mx > 1 && mx < Infinity ? ` ${n}/${mx}` : ''}</div>` :
-      `<div class="row" style="justify-content:center"><span class="req ${G.S.coins >= cost ? 'ok' : 'no'}">🪙 ${cost}</span>${b.mats ? reqs(b.mats) : ''}</div>
-       ${mx < Infinity && mx > 1 ? `<div class="meta">${n}/${mx}</div>` : ''}
-       <button class="btn sm ${block ? 'off' : ''}" data-act="buy" data-t="${k}">Buy</button>`}</div>`;
-  }
-  return html + '</div>';
+    return `<div class="card ${st}">${isNew && st !== 'owned' ? '<span class="ribbon">New</span>' : ''}
+      <div class="big">${art(k)}</div><div class="nm">${b.name}</div><div class="meta">${what(b)}</div>
+      ${st === 'owned' ? `<div class="meta okline">✔ Built${mx > 1 && mx < Infinity ? ` ${n}/${mx}` : ''}</div>` :
+      `<div class="row reqs"><span class="req ${G.S.coins >= cost ? 'ok' : 'no'}">🪙 ${fmtN(cost)}</span>${b.mats ? reqs(b.mats) : ''}</div>
+       ${mx < Infinity && mx > 1 ? `<div class="meta">${n}/${mx} built</div>` : ''}
+       <button class="btn sm ${st === 'buy' ? '' : 'off'}" data-act="buy" data-t="${k}">Build</button>`}</div>`;
+  };
+  const open = list.filter(x => x.st !== 'locked'), locked = list.filter(x => x.st === 'locked');
+  let html = `<div class="tabs">${tabs}</div>`;
+  html += open.length ? `<div class="grid">${open.map(card).join('')}</div>` : '<p class="sub">Nothing here yet. Keep leveling up!</p>';
+  if (locked.length) html += `<h3 class="soon">Coming later</h3><div class="soonlist">${locked.map(({ k, b, noBp }) =>
+    `<div class="soonrow">${art(k, 'si')}<span class="nm">${b.name}</span><span class="spacer"></span><span class="lk">${noBp && G.S.level >= b.lvl ? '🗺️ ' + b.needsText : 'Level ' + b.lvl}</span></div>`).join('')}</div>`;
+  return html;
 }
 function ordersSheet() {
   G.refreshOrders();
   const t = now();
-  return `<p class="sub">Townsfolk need goods. Town charm adds +${G.charm()}% to every reward.</p>` + G.S.orders.map((o, i) => {
-    if (o.wait) return `<div class="order"><span class="sub">🚚 New order arriving in <b data-end="${o.wait}">${fmtT(o.wait - t)}</b></span></div>`;
-    const ok = G.hasAll(o.items);
-    return `<div class="order ${ok ? 'ready' : ''}"><div class="row"><span class="who">${o.who}</span><span class="spacer"></span><span class="rew">🪙 ${fmtN(o.coins)} · ⭐ ${o.xp}</span></div>
-      <div class="row" style="margin:8px 0">${reqs(o.items)}</div>
+  const list = G.S.orders.map((o, i) => ({ o, i, ok: !o.wait && G.hasAll(o.items) }))
+    .sort((a, b) => (b.ok - a.ok) || (!!a.o.wait - !!b.o.wait));
+  const ready = list.filter(x => x.ok).length;
+  return `<p class="sub">${ready ? `<b>${ready} order${ready > 1 ? 's' : ''} ready to deliver!</b> ` : ''}Town charm adds +${G.charm()}% to every reward.</p><div class="orders">` + list.map(({ o, i, ok }) => {
+    if (o.wait) return `<div class="order waiting">${ui('mail', '✉️')}<span class="sub" style="margin:0">A new order arrives in <b data-end="${o.wait}">${fmtT(o.wait - t)}</b></span></div>`;
+    const pid = WHO_PID[o.who];
+    return `<div class="order ${ok ? 'ready' : ''}"><div class="ohead">${pid ? face(pid, 'oface') : ui('mail', '✉️').replace('class="ui"', 'class="oface plain"')}
+        <div class="grow"><div class="who">${o.who}</div><div class="rew">🪙 ${fmtN(o.coins)} &nbsp; ⭐ ${o.xp}</div></div>
+        ${ok ? '<span class="stamp">Ready</span>' : ''}</div>
+      <div class="row reqs">${reqs(o.items)}</div>
       <div class="row"><button class="btn ${ok ? '' : 'off'}" data-act="deliver" data-i="${i}">Deliver</button><span class="spacer"></span><button class="btn alt sm" data-act="skip" data-i="${i}">Skip</button></div></div>`;
-  }).join('');
+  }).join('') + '</div>';
 }
 function menuSheet() {
   const S = G.S, st = S.settings;
@@ -523,10 +603,10 @@ function renderExp() {
 function renderExpFoot(reg) {
   const p = X.progress(reg), st = X.regionState(reg);
   const foods = Object.keys(X.FOOD).filter(k => G.have(k) > 0);
-  $('#expFoot').innerHTML = `<div class="row"><b>${reg.icon} ${reg.name}</b><span class="sub" style="margin:0">· explored ${p.have}/${p.total}</span><span class="spacer"></span>
+  $('#expFoot').innerHTML = paint(`<div class="row"><b>${reg.icon} ${reg.name}</b><span class="sub" style="margin:0">· explored ${p.have}/${p.total}</span><span class="spacer"></span>
       <span class="sub" style="margin:0">${st.done ? 'Fully explored ✅' : `Explore it all: 🪙 ${fmtN(reg.reward.coins)} · ⏳ ${reg.reward.hg} · ${Object.entries(reg.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}`}</span></div>
     <div class="row" style="margin-top:8px"><b>🧺 Picnic basket</b><span class="sub" style="margin:0">Eat food you've made for energy</span></div>
-    <div class="row" style="margin-top:6px">${foods.length ? foods.map(k => `<span class="food">${ic(k)} ${G.have(k)} <button class="btn sm" data-eat="${k}">+${X.FOOD[k]}⚡</button></span>`).join('') : '<span class="sub" style="margin:0">Bake bread or make other foods to pack a picnic.</span>'}</div>`;
+    <div class="row" style="margin-top:6px">${foods.length ? foods.map(k => `<span class="food">${ic(k)} ${G.have(k)} <button class="btn sm" data-eat="${k}">+${X.FOOD[k]}⚡</button></span>`).join('') : '<span class="sub" style="margin:0">Bake bread or make other foods to pack a picnic.</span>'}</div>`);
 }
 function updateEnergy() {
   const e = X.energy();
@@ -557,7 +637,7 @@ $('#expGrid').addEventListener('click', e => {
   const bits = [];
   if (r.coins) bits.push(`+${r.coins}🪙`);
   if (r.hg) bits.push(`+${r.hg}⏳`);
-  for (const k in r.loot) bits.push(`+${r.loot[k]}${ic(k)}`);
+  for (const k in r.loot) bits.push(`+${r.loot[k]}${em(k)}`);
   if (bits.length) toast(`${X.TILE[r.type].name}: ${bits.join(' ')}`);
   G.save();
   renderExp();
@@ -575,7 +655,7 @@ function stationSheet(o) {
   const st = G.trainState(o);
   if (st.status === 'away') return `<div style="font-size:48px;text-align:center">🛤️</div><p>The train is out on its route.</p>
     <p>Next train arrives in <b data-end="${st.arrive}">${fmtT(st.arrive - now())}</b></p><p class="sub">Trains stay for 45 minutes. Stock up on goods while you wait!</p>
-    <br><button class="btn alt sm" data-act="move">Move</button>`;
+    <br>${moveBtn(o)}`;
   const tr = st.train, all = tr.crates.every(c => c.filled), bonus = G.trainBonus(tr);
   return `<p>🚂 Departs in <b data-end="${tr.depart}">${fmtT(tr.depart - now())}</b></p>
     <p class="sub">Fill crates for coins and XP. Fill all ${tr.crates.length} and send the train off for a bonus: 🪙 ${fmtN(bonus.coins)} · ⏳ ${bonus.hg} · ${ic('planks')} ${bonus.planks} · ${ic('nails')} ${bonus.nails}</p>
@@ -584,53 +664,66 @@ function stationSheet(o) {
       <div class="meta">🪙 ${fmtN(c.coins)} · ⭐ ${c.xp}</div>
       ${c.filled ? '<div class="meta">Loaded</div>' : `${req(c.id, c.q)}<button class="btn sm ${G.have(c.id) >= c.q ? '' : 'off'}" data-act="fillCrate" data-i="${i}">Load</button>`}</div>`).join('')}</div>
     <br>${all ? '<button class="btn gold wide" data-act="sendTrain">🚂 Send it off! Collect bonus</button>' : ''}
-    <br><button class="btn alt sm" data-act="move">Move</button>`;
+    <br>${moveBtn(o)}`;
 }
 
 // ---------- quests & townsfolk ----------
+// reward as little chips: coins, XP, hourglasses, items
 function rewardLine(r) {
   const parts = [];
-  if (r.coins) parts.push(`🪙 ${fmtN(r.coins)}`);
-  if (r.xp) parts.push(`⭐ ${r.xp}`);
-  if (r.hg) parts.push(`⏳ ${r.hg}`);
-  if (r.items) for (const k in r.items) parts.push(`${ic(k)} ${r.items[k]}`);
-  return parts.join(' · ');
+  if (r.coins) parts.push(`<span class="chip">🪙 ${fmtN(r.coins)}</span>`);
+  if (r.xp) parts.push(`<span class="chip">⭐ ${r.xp}</span>`);
+  if (r.hg) parts.push(`<span class="chip">⏳ ${r.hg}</span>`);
+  if (r.items) for (const k in r.items) parts.push(`<span class="chip">${art(k)} ${r.items[k]}</span>`);
+  return `<span class="chips">${parts.join('')}</span>`;
+}
+function goalIcon(g) {
+  const id = g.id || (g.key && g.key.includes(':') ? g.key.split(':')[1] : null);
+  if (id && (ITEMS[id] || BUILD[id] || ANIMALS[id])) return art(id, 'gi');
+  if (g.key && g.key.startsWith('pet')) return IMG(`sprites/${g.key.includes('milo') ? 'milo' : 'ollie'}.webp`, '🐈', 'gi');
+  return ui('scroll', '•').replace('class="ui"', 'class="gi"');
 }
 function goalsHtml(q) {
   return q.goals.map(g => {
     const p = Q.goalProgress(q, g), done = p >= g.n;
-    const icon = g.id ? (ITEMS[g.id] ? ic(g.id) : BUILD[g.id] ? BUILD[g.id].icon : ANIMALS[g.id] ? ANIMALS[g.id].icon : '•') : (g.key && g.key.includes(':') ? (ITEMS[g.key.split(':')[1]] ? ic(g.key.split(':')[1]) : g.key.startsWith('pet') ? '🐈' : '•') : '•');
-    return `<div class="goal ${done ? 'done' : ''}">${done ? '✅' : icon} <span>${g.label}</span><span class="spacer"></span>
-      <div class="bar"><div style="width:${p / g.n * 100}%"></div></div><b>${p}/${g.n}</b></div>`;
+    return `<div class="goal ${done ? 'done' : ''}">${goalIcon(g)}<span class="gl">${g.label}</span>
+      <div class="bar"><div style="width:${p / g.n * 100}%"></div></div><b class="gn">${done ? '✔' : `${p}/${g.n}`}</b></div>`;
   }).join('');
 }
+// first sentence or so of what they said, as a teaser on the card
+const teaser = s => { const t = String(s || '').replace(/<[^>]+>/g, ''); const m = t.match(/^.{20,110}?[.!?](\s|$)/); return m ? m[0].trim() : t.slice(0, 100) + (t.length > 100 ? '…' : ''); };
 function dailyHtml() {
   const d = Q.daily(); if (!d) return '';
   const p = PEOPLE[d.who], ok = G.hasAll(d.items);
-  if (d.done) return `<div class="quest"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">⭐ Daily favor done!</div><div class="sub" style="margin:0">${p.name} is grateful. A new favor comes tomorrow.</div></div></div></div>`;
-  return `<div class="quest ${ok ? 'ready' : ''}" style="border-color:#F0D27A;background:#FFF9E6"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">⭐ Daily favor</div><div class="sub" style="margin:0">${p.name} needs a hand today</div></div></div>
-    <div class="row" style="margin:8px 0">${reqs(d.items)}</div>
-    <div class="row"><span class="sub" style="margin:0">Reward: 🪙 ${fmtN(d.coins)} · ⭐ ${d.xp} · ⏳ ${d.hg}</span><span class="spacer"></span>
-    <button class="btn ${ok ? '' : 'off'}" data-act="claimDaily">Give</button></div></div>`;
+  if (d.done) return `<div class="quest daily done"><div class="qh">${face(d.who)}<div class="grow"><div class="qkind">Daily favor</div><div class="qt">All done for today</div>
+    <div class="qwho">${p.name} is grateful. A new favor comes tomorrow.</div></div></div></div>`;
+  return `<div class="quest daily ${ok ? 'ready' : ''}"><span class="pin"></span><div class="qh">${face(d.who)}<div class="grow"><div class="qkind">Daily favor</div><div class="qt">${p.name} needs a hand</div></div></div>
+    <div class="row reqs">${reqs(d.items)}</div>
+    <div class="qfoot">${rewardLine({ coins: d.coins, xp: d.xp, hg: d.hg })}<span class="spacer"></span>
+    <button class="btn ${ok ? 'gold' : 'off'}" data-act="claimDaily">Give</button></div></div>`;
 }
 function questsSheet() {
   Q.refreshQuests();
-  const list = Q.activeQuests();
-  if (!list.length) return dailyHtml() + '<p class="sub">No quests right now. Keep farming! New requests arrive as you level up.</p>';
+  const list = Q.activeQuests().slice().sort((a, b) => Q.isComplete(b) - Q.isComplete(a));
+  if (!list.length) return dailyHtml() + '<p class="sub">No requests right now. Keep farming! New ones arrive as you level up.</p>';
   return dailyHtml() + list.map(q => {
-    const p = PEOPLE[q.who], ready = Q.isComplete(q);
-    return `<div class="quest ${ready ? 'ready' : ''}"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">${q.title}</div><div class="sub" style="margin:0">${p.name}</div></div></div>
-      ${goalsHtml(q)}<div class="row" style="margin-top:8px"><span class="sub" style="margin:0">Reward: ${rewardLine(q.reward)}</span><span class="spacer"></span>
-      ${ready ? `<button class="btn" data-act="claimQuest" data-id="${q.id}">Claim</button>` : `<button class="btn alt sm" data-act="showQuest" data-id="${q.id}">Details</button>`}</div></div>`;
+    const p = PEOPLE[q.who], ready = Q.isComplete(q), fresh = !G.S.quests.active[q.id]?.seen;
+    return `<div class="quest ${ready ? 'ready' : ''}">${fresh ? '<span class="ribbon">New</span>' : ''}
+      <div class="qh">${face(q.who)}<div class="grow"><div class="qt">${q.title}</div><div class="qwho">${p.name}</div></div></div>
+      <div class="said" data-act="showQuest" data-id="${q.id}">“${teaser(q.intro)}”</div>
+      ${goalsHtml(q)}
+      <div class="qfoot">${rewardLine(q.reward)}<span class="spacer"></span>
+      ${ready ? `<button class="btn gold" data-act="claimQuest" data-id="${q.id}">Claim reward</button>` : `<button class="btn alt sm" data-act="showQuest" data-id="${q.id}">Read</button>`}</div></div>`;
   }).join('');
 }
+// a conversation card: big framed portrait, name plate, their words
+const talkHead = (pid, sub) => `<div class="talkhead">${face(pid, 'portrait-img')}<div class="nameplate">${PEOPLE[pid].name}</div>${sub ? `<div class="sub" style="margin:6px 0 0">${sub}</div>` : ''}</div>`;
 function questIntro(q) {
-  const p = PEOPLE[q.who];
   Q.markSeen(q.id);
   sfx.open();
-  modal(`<div class="portrait">${p.icon}</div><b>${p.name}</b><div class="sub">${q.title}</div>
-    <div class="say">${q.intro}</div><div style="text-align:left">${goalsHtml(q)}</div>
-    <p class="sub" style="margin-top:10px">Reward: ${rewardLine(q.reward)}</p>
+  modal(`${talkHead(q.who, q.title)}
+    <div class="say">${q.intro}</div><div class="goals">${goalsHtml(q)}</div>
+    <div class="rewardrow"><span class="sub" style="margin:0">Reward</span>${rewardLine(q.reward)}</div>
     <button class="btn wide" data-act="closeModal">I'm on it!</button>`);
 }
 function claimQuest(id) {
@@ -639,8 +732,8 @@ function claimQuest(id) {
   const p = PEOPLE[q.who];
   sfx.deliver();
   closeSheet();
-  modal(`<div class="portrait">${p.icon}</div><b>${p.name}</b><div class="sub">✅ ${q.title}</div>
-    <div class="say">${q.outro}</div><p><b>${rewardLine(q.reward)}</b></p>
+  modal(`${talkHead(q.who, `✔ ${q.title}`)}
+    <div class="say">${q.outro}</div><div class="rewardrow"><span class="sub" style="margin:0">You got</span>${rewardLine(q.reward)}</div>
     ${q.flag === 'expedition' ? '<p class="sub">🗺️ The Explore button now shows the old map!</p>' : ''}
     ${q.flag === 'ollieBench' ? '<p class="sub">🪑 Ollie will nap on your bench now.</p>' : ''}
     <button class="btn wide" data-act="closeModal">Wonderful!</button>`);
@@ -654,7 +747,7 @@ function talkTo(person) {
   if (act) return questIntro(act);
   sfx.tap();
   const lines = ['Lovely day for it, isn\'t it?', 'The town looks better every day, thanks to you.', `Have you met Ollie? Biggest cat I've ever seen.`, 'Milo zoomed past me three times this morning!', 'Keep up the good work, farmer!'];
-  modal(`<div class="portrait">${def.icon}</div><b>${def.name}</b><div class="sub">${def.blurb}</div>
+  modal(`${talkHead(person.id, def.blurb)}
     <div class="say">${lines[Math.floor(Math.random() * lines.length)]}</div><button class="btn wide" data-act="closeModal">Bye for now</button>`);
 }
 function questTick() {
