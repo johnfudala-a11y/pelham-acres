@@ -1,6 +1,7 @@
 // Pelham Acres — input, menus, and the game loop.
 import { BUILD, CROPS, ITEMS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP } from './data.js';
 import * as G from './game.js';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -30,6 +31,7 @@ function showLevelUps() {
   if (!levelQueue.length || !$('#modal').hidden) return;
   const L = levelQueue.shift();
   const un = unlocksAt(L);
+  sfx.levelUp();
   modal(`<div style="font-size:54px">🎉</div><h2>Level ${L}!</h2><p class="sub">+${L * 15} 🪙 &nbsp; +2 ⏳</p>
     ${un.length ? `<b>New this level</b><div class="unlocks">${un.map(u => `<div>${u.icon} ${u.name}</div>`).join('')}</div>` : '<p>Keep growing Pelham Acres!</p>'}
     <button class="btn wide" data-act="closeModal">Hooray!</button>`);
@@ -39,6 +41,7 @@ function showLevelUps() {
 // ---------- sheet (side / bottom panel) ----------
 let sheetFn = null, sheetObj = null;
 function openSheet(title, fn, obj = null) {
+  if (!sheetFn) sfx.open(); else sfx.tap();
   sheetFn = fn; sheetObj = obj;
   $('#sheetTitle').textContent = title;
   renderSheet();
@@ -46,7 +49,7 @@ function openSheet(title, fn, obj = null) {
 }
 function renderSheet() { if (sheetFn) $('#sheetBody').innerHTML = sheetFn(); }
 function closeSheet() { sheetFn = null; sheetObj = null; $('#sheet').classList.remove('open'); $('#sheet').setAttribute('aria-hidden', 'true'); document.body.classList.remove('sheet-open'); }
-$('#sheetClose').addEventListener('click', closeSheet);
+$('#sheetClose').addEventListener('click', () => { sfx.close(); closeSheet(); });
 $('#sheetBody').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) act(a); });
 function liveUpdate() {
   let rerender = false;
@@ -90,8 +93,8 @@ function startPlant(crop) {
 function endPlant() { view.plantCrop = null; setModeBar(null); }
 function tryPlant(o) {
   const r = G.plant(o, view.plantCrop);
-  if (r === 'ok') { floater(o.x + 0.5, o.y + 0.5, `-${CROPS[view.plantCrop].cost}🪙`, '#FFE9A8'); return true; }
-  if (r === 'coins') { toast('Not enough coins to plant'); endPlant(); }
+  if (r === 'ok') { sfx.plant(); floater(o.x + 0.5, o.y + 0.5, `-${CROPS[view.plantCrop].cost}🪙`, '#FFE9A8'); return true; }
+  if (r === 'coins') { sfx.error(); toast('Not enough coins to plant'); endPlant(); }
   return false;
 }
 
@@ -122,11 +125,12 @@ function nearestFree(t, x0, y0) {
 function updateGhost() { const g = view.ghost; if (g) g.ok = G.canPlace(g.t, g.x, g.y, g.move); }
 function confirmPlace() {
   const g = view.ghost; if (!g) return;
-  if (!g.ok) { toast("Can't place there — something's in the way"); return; }
-  if (g.move) { G.moveObj(g.move, g.x, g.y); cancelPlace(); return; }
+  if (!g.ok) { sfx.error(); toast("Can't place there — something's in the way"); return; }
+  if (g.move) { sfx.build(); G.moveObj(g.move, g.x, g.y); cancelPlace(); return; }
   const block = G.buyBlock(g.t);
-  if (block) { toast(block); return; }
+  if (block) { sfx.error(); toast(block); return; }
   G.pay(g.t);
+  sfx.build();
   const o = G.addObj(g.t, g.x, g.y);
   floater(o.x + BUILD[g.t].w / 2, o.y + BUILD[g.t].h / 2, '✨ Built!', '#FFFFFF');
   G.addXP(BUILD[g.t].kind === 'path' ? 0 : 1);
@@ -152,34 +156,36 @@ function act(el) {
       if (f && !f.crop) tryPlant(f);
       break;
     }
-    case 'hgField': case 'hg': if (G.useHourglass(o)) toast('⏳ Time skipped!'); else toast('No hourglasses left'); break;
+    case 'hgField': case 'hg': if (G.useHourglass(o)) { sfx.hourglass(); toast('⏳ Time skipped!'); } else { sfx.error(); toast('No hourglasses left'); } break;
     case 'make': {
       const r = G.queueJob(o, +d.i);
+      if (r === 'ok') sfx.make(); else sfx.error();
       if (r === 'slots') toast('All slots are busy'); else if (r === 'missing') toast('Missing ingredients'); else if (r === 'locked') toast('Recipe not unlocked yet');
       break;
     }
     case 'collectJobs': collectProducer(o); break;
-    case 'buyAnimal': { const r = G.buyAnimal(o); if (r === 'coins') toast('Not enough coins'); else if (r === 'full') toast('This pen is full'); break; }
-    case 'feedAll': { const n = G.feedAll(o); if (!n) toast(`No ${nm(G.penAnimal(o).feed)} — make some at the Feed Mill`); break; }
+    case 'buyAnimal': { const r = G.buyAnimal(o); if (r === 'ok') { sfx.coin(); animalSound(o); } else sfx.error(); if (r === 'coins') toast('Not enough coins'); else if (r === 'full') toast('This pen is full'); break; }
+    case 'feedAll': { const n = G.feedAll(o); if (n) { sfx.plant(); animalSound(o); } else { sfx.error(); toast(`No ${nm(G.penAnimal(o).feed)} — make some at the Feed Mill`); } break; }
     case 'collectAnimals': collectPen(o); break;
     case 'collectRent': collectHouse(o); break;
     case 'move': startPlacing(o.t, o); return;
     case 'clear': {
       const r = G.clearObstacle(o);
-      if (r.err) { toast('Not enough coins'); break; }
+      if (r.err) { sfx.error(); toast('Not enough coins'); break; }
+      sfx.clear();
       floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${ic(r.drop.id)}` : '+2 XP');
       closeSheet(); break;
     }
     case 'deliver': {
       const r = G.deliver(+d.i);
-      if (r) { toast(`Delivered! +${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}`); }
+      if (r) { sfx.deliver(); toast(`Delivered! +${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}`); }
       break;
     }
     case 'skip': G.skipOrder(+d.i); break;
-    case 'sell': { const c = G.sell(d.id, +d.n); if (c) toast(`Sold for ${c} 🪙`); break; }
-    case 'upgradeBarn': if (G.upgradeBarn()) toast('Barn upgraded! +25 space'); else toast('Need more coins or materials'); break;
-    case 'tab': shopTab = d.tab; break;
-    case 'buy': { const blk = G.buyBlock(d.t); if (blk) { toast(blk); break; } startPlacing(d.t); return; }
+    case 'sell': { const c = G.sell(d.id, +d.n); if (c) { sfx.coin(); toast(`Sold for ${c} 🪙`); } break; }
+    case 'upgradeBarn': if (G.upgradeBarn()) { sfx.build(); toast('Barn upgraded! +25 space'); } else { sfx.error(); toast('Need more coins or materials'); } break;
+    case 'tab': sfx.tap(); shopTab = d.tab; break;
+    case 'buy': { const blk = G.buyBlock(d.t); if (blk) { sfx.error(); toast(blk); break; } sfx.tap(); startPlacing(d.t); return; }
     case 'export': { const ta = $('#saveText'); ta.value = G.exportSave(); ta.select(); try { navigator.clipboard.writeText(ta.value); toast('Save copied'); } catch (e) {} return; }
     case 'import': {
       try { G.importSave($('#saveText').value); afterLoad(); toast('Save loaded'); closeSheet(); } catch (e) { toast("That save code didn't work"); }
@@ -190,7 +196,10 @@ function act(el) {
         <div class="row" style="justify-content:center"><button class="btn red" data-act="resetYes">Erase and restart</button><button class="btn alt" data-act="closeModal">Keep my farm</button></div>`);
       return;
     case 'resetYes': G.resetGame(); afterLoad(); closeModal(); closeSheet(); toast('A fresh start in Pelham Acres'); return;
-    case 'toggle': G.S.settings[d.k] = !G.S.settings[d.k]; break;
+    case 'toggle':
+      G.S.settings[d.k] = !G.S.settings[d.k];
+      if (d.k === 'music') setMusic(G.S.settings.music); else setSfx(G.S.settings.sfx);
+      sfx.tap(); break;
   }
   G.save(); refreshHud(); renderSheet();
   setTimeout(showLevelUps, 300);
@@ -199,19 +208,22 @@ function act(el) {
 // ---------- object interactions ----------
 function collectProducer(o) {
   const { got, full } = G.collectJobs(o);
+  if (got.length) sfx.collect();
   got.forEach((j, i) => setTimeout(() => floater(o.x + 1, o.y + 1, `+${j.n}${ic(j.out)}`), i * 150));
-  if (full) toast('Barn is full! Sell or upgrade in the Barn.');
+  if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got.length;
 }
+function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : sfx.baa)(); }
 function collectPen(o) {
   const { got, full } = G.collectAnimals(o);
-  if (got) floater(o.x + 1, o.y + 1, `+${got}${ic(G.penAnimal(o).product)}`);
-  if (full) toast('Barn is full! Sell or upgrade in the Barn.');
+  if (got) { sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}${ic(G.penAnimal(o).product)}`); }
+  if (o.animals.length) animalSound(o);
+  if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got;
 }
 function collectHouse(o) {
   const c = G.collectRent(o);
-  if (c) floater(o.x + 1, o.y + 1, `+${c}🪙`, '#FFE9A8');
+  if (c) { sfx.coin(); floater(o.x + 1, o.y + 1, `+${c}🪙`, '#FFE9A8'); }
   return c;
 }
 
@@ -221,13 +233,16 @@ function petCat(c) {
   const S = G.S; S.pets = S.pets || {};
   const ready = now() - (S.pets[c.id] || 0) > PET_COOLDOWN;
   if (c.id === 'ollie') {
+    sfx.meow(true);
     if (!ready) { floater(c.x, c.y, '😴 too comfy', '#FFFFFF'); toast('Ollie is too comfy to move right now.'); return; }
     S.pets.ollie = now();
     S.coins += 3;
+    setTimeout(() => sfx.purr(), 500);
     floater(c.x, c.y, '💛 purrr  +3🪙', '#FFE9A8');
     toast('Ollie rolls over for belly rubs. What a big, happy boy.');
   } else {
     c.zoomUntil = performance.now() + 4500; c.pause = 0; catGo(c, true);
+    sfx.zoomies();
     if (!ready) { floater(c.x, c.y, '⚡ zoom!', '#FFFFFF'); toast('Milo is far too busy chasing a butterfly 🦋'); return; }
     S.pets.milo = now();
     const finds = Object.keys(CROPS).filter(k => CROPS[k].lvl <= S.level).concat(['wood', 'wood', 'stone']);
@@ -256,7 +271,8 @@ function tapObject(o) {
 }
 function harvestField(o) {
   const c = o.crop, r = G.harvest(o);
-  if (r === 'full') { toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
+  if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
+  if (r) sfx.harvest();
   if (r) floater(o.x + 0.5, o.y + 0.5, `+${CROP_YIELD}${CROPS[c].icon}`);
   return !!r;
 }
@@ -385,7 +401,7 @@ function menuSheet() {
     <p class="sub">Town charm: ${G.charm()}. No ads, no purchases — ever. Hourglasses are earned by leveling up and by every 5th delivery.</p>
     <h3>Sound</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="music">Music: ${st.music ? 'On' : 'Off'}</button>
     <button class="btn alt sm" data-act="toggle" data-k="sfx">Sound effects: ${st.sfx ? 'On' : 'Off'}</button></div>
-    <p class="sub">Music and sound effects arrive in a coming update.</p>
+    <p class="sub">No sound on iPad? Check the volume and that Silent Mode is off.</p>
     <h3>Backup</h3><p class="sub">Cloud saves are coming. For now, copy this code to keep a backup, or paste one to restore.</p>
     <textarea id="saveText" placeholder="Save code"></textarea><div class="row" style="margin-top:8px">
     <button class="btn alt sm" data-act="export">Copy save code</button><button class="btn alt sm" data-act="import">Load pasted code</button></div>
@@ -491,6 +507,7 @@ setCatGrid(G.objAt);
 const loaded = G.load();
 if (!loaded) { G.newGame(); G.save(); }
 afterLoad();
+initAudio(G.S.settings);
 if (!loaded) {
   modal(`<div style="font-size:54px">🌾</div><h2>Welcome to Pelham Acres</h2>
     <p>Grow crops, raise animals, make goods, and turn this little farm into a thriving country town.</p>
