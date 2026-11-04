@@ -305,15 +305,17 @@ export function draw() {
   updateCats(pt);
   for (const o of flat) BUILD[o.t].kind === 'field' ? drawField(o, t) : drawPath(o);
   if (g) drawGhostFootprint(g);
-  // draw tall objects and cats in depth order
-  const catQ = [...cats].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+  // draw tall objects, cats, and townsfolk in depth order
+  updatePeople(pt);
+  const catQ = [...cats, ...people.filter(p => p.visible)].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+  const drawW = w => w.person ? drawPerson(w, pt) : drawCat(w, pt);
   let ci = 0;
   for (const o of tall) {
     const B = BUILD[o.t], d = o.x + B.w / 2 + o.y + B.h / 2;
-    while (ci < catQ.length && catQ[ci].x + catQ[ci].y < d) drawCat(catQ[ci++], pt);
+    while (ci < catQ.length && catQ[ci].x + catQ[ci].y < d) drawW(catQ[ci++]);
     drawObj(o, t);
   }
-  while (ci < catQ.length) drawCat(catQ[ci++], pt);
+  while (ci < catQ.length) drawW(catQ[ci++]);
   if (g) { ctx.globalAlpha = 0.75; drawObj({ ...g.proto, x: g.x, y: g.y }, t); ctx.globalAlpha = 1; }
   for (const o of tall) drawStatus(o, BUILD[o.t], t);
   drawList = [...flat, ...tall];
@@ -374,8 +376,11 @@ function catSpotOk(x, y) {
   return !o || o.t === 'field' || o.t === 'path';
 }
 let objAtTile = () => null;
-export function setCatGrid(fn) { objAtTile = fn; }
+let catFavorite = () => null; // optional: returns a favorite spot {x,y} for a cat
+export function setCatGrid(fn, fav) { objAtTile = fn; if (fav) catFavorite = fav; }
 export function catGo(c, far) {
+  const fav = !far && catFavorite(c);
+  if (fav && Math.random() < 0.7) { c.tx = fav.x; c.ty = fav.y; return; }
   const r = far ? c.range * 1.6 : c.range;
   for (let i = 0; i < 25; i++) {
     const x = c.x + (Math.random() * 2 - 1) * r, y = c.y + (Math.random() * 2 - 1) * r;
@@ -469,12 +474,74 @@ function drawCat(c, pt) {
   }
   ctx.restore();
 }
+// ---------- townsfolk ----------
+export const people = [];
+export function setPeople(defs) {
+  for (const id in defs) {
+    if (people.some(p => p.id === id)) continue;
+    const d = defs[id], [hx, hy] = d.home;
+    people.push({ id, person: true, def: d, home: [hx + 0.5, hy + 0.5], x: hx + 0.5, y: hy + 0.5, tx: hx + 0.5, ty: hy + 0.5, speed: 0.55, pause: 0, face: 1, visible: false, badge: null });
+  }
+}
+function personGo(p) {
+  for (let i = 0; i < 20; i++) {
+    const x = p.home[0] + (Math.random() * 2 - 1) * 4, y = p.home[1] + (Math.random() * 2 - 1) * 4;
+    if (catSpotOk(x, y)) { p.tx = x; p.ty = y; return; }
+  }
+  p.tx = 14.5 + Math.random() * 2; p.ty = 12.5 + Math.random() * 2;
+}
+function updatePeople(pt) {
+  const dt = lastPeopleT ? Math.min(0.1, (pt - lastPeopleT) / 1000) : 0; lastPeopleT = pt;
+  for (const p of people) {
+    if (!p.visible || pt < p.pause) continue;
+    const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy);
+    if (d < 0.05) { p.pause = pt + 2000 + Math.random() * 6000; personGo(p); continue; }
+    const st = Math.min(d, p.speed * dt);
+    p.x += dx / d * st; p.y += dy / d * st;
+    if (Math.abs(dx - dy) > 0.01) p.face = dx - dy > 0 ? 1 : -1;
+  }
+}
+let lastPeopleT = 0;
+function drawPerson(p, pt) {
+  const [px, py] = P(p.x, p.y), d = p.def;
+  const moving = pt >= p.pause && Math.hypot(p.tx - p.x, p.ty - p.y) > 0.05;
+  const step = moving ? Math.sin(pt / 140) * 2.5 : 0;
+  ctx.save(); ctx.translate(px, py);
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 3.5, 0, 0, 7); ctx.fill();
+  ctx.scale(p.face, 1);
+  // legs
+  ctx.fillStyle = '#3B3330'; ctx.fillRect(-4, -9 + Math.max(0, step), 3, 9 - Math.max(0, step)); ctx.fillRect(1, -9 + Math.max(0, -step), 3, 9 - Math.max(0, -step));
+  // body / coat
+  ctx.fillStyle = d.coat; ctx.beginPath(); ctx.moveTo(-6, -8); ctx.lineTo(6, -8); ctx.lineTo(5, -22); ctx.quadraticCurveTo(0, -25, -5, -22); ctx.closePath(); ctx.fill();
+  // arms
+  ctx.strokeStyle = d.coat; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-5, -20); ctx.lineTo(-7, -12 - step * 0.6); ctx.moveTo(5, -20); ctx.lineTo(7, -12 + step * 0.6); ctx.stroke();
+  // head
+  ctx.fillStyle = d.skin; ctx.beginPath(); ctx.arc(0, -29, 5.5, 0, 7); ctx.fill();
+  ctx.fillStyle = d.hair; ctx.beginPath(); ctx.arc(-0.5, -30.5, 5.6, Math.PI * 0.95, Math.PI * 2.05); ctx.fill();
+  ctx.fillStyle = '#2B1B12'; ctx.beginPath(); ctx.arc(2.5, -29, 0.9, 0, 7); ctx.fill();
+  if (d.hat) {
+    ctx.fillStyle = d.hat; ctx.beginPath(); ctx.ellipse(0, -33, 8, 2.2, 0, 0, 7); ctx.fill();
+    ctx.fillRect(-4.5, -39, 9, 6);
+  }
+  ctx.restore();
+  if (p.badge) {
+    const y = py - 52 + Math.sin(pt / 300) * 2;
+    ctx.fillStyle = p.badge === '✓' ? '#6BA43A' : '#E9A825';
+    ctx.beginPath(); ctx.arc(px, y, 9, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.badge, px, y + 0.5);
+  }
+}
+
 function tri(x1, y1, x2, y2, x3, y3, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3); ctx.closePath(); ctx.fill(); }
 export function catPos(c) { return { x: c.x, y: c.y }; }
 
 // ---------- hit testing ----------
 export function hit(sx, sy) {
   const wx = (sx - W / 2 - cam.x) / cam.z, wy = (sy - H / 2 - cam.y) / cam.z;
+  for (const p of people) { if (!p.visible) continue; const [px, py] = P(p.x, p.y); if (Math.abs(wx - px) < 14 && wy < py + 4 && wy > py - 60) return { person: p }; }
   for (const c of cats) { const [px, py] = P(c.x, c.y); if (Math.abs(wx - px) < 20 && wy < py + 4 && wy > py - 30) return { cat: c }; }
   const tile = s2w(sx, sy), tx = Math.floor(tile.x), ty = Math.floor(tile.y);
   for (let i = drawList.length - 1; i >= 0; i--) {

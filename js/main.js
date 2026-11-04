@@ -2,8 +2,10 @@
 import { BUILD, CROPS, ITEMS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER } from './data.js';
 import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
-export const APP_VERSION = '0.4';
-import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo } from './render.js';
+import * as Q from './quests.js';
+import { PEOPLE, QUEST_BY_ID } from './story.js';
+export const APP_VERSION = '0.5';
+import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
 const $ = s => document.querySelector(s);
 const now = G.now;
@@ -167,6 +169,8 @@ function act(el) {
   const d = el.dataset, o = sheetObj;
   switch (d.act) {
     case 'closeModal': closeModal(); setTimeout(showLevelUps, 200); break;
+    case 'claimQuest': claimQuest(d.id); return;
+    case 'showQuest': questIntro(QUEST_BY_ID[d.id]); return;
     case 'endPlant': endPlant(); break;
     case 'confirmPlace': confirmPlace(); break;
     case 'cancelPlace': cancelPlace(); break;
@@ -268,6 +272,7 @@ function petCat(c) {
     if (!ready) { floater(c.x, c.y, '😴 too comfy', '#FFFFFF'); toast('Ollie is too comfy to move right now.'); return; }
     S.pets.ollie = now();
     S.coins += 3;
+    G.stat('pet'); G.stat('pet:ollie');
     setTimeout(() => sfx.purr(), 500);
     floater(c.x, c.y, '💛 purrr  +3🪙', '#FFE9A8');
     toast('Ollie rolls over for belly rubs. What a big, happy boy.');
@@ -276,6 +281,7 @@ function petCat(c) {
     sfx.zoomies();
     if (!ready) { floater(c.x, c.y, '⚡ zoom!', '#FFFFFF'); toast('Milo is far too busy chasing a butterfly 🦋'); return; }
     S.pets.milo = now();
+    G.stat('pet'); G.stat('pet:milo');
     const finds = Object.keys(CROPS).filter(k => CROPS[k].lvl <= S.level).concat(['wood', 'wood', 'stone']);
     const id = finds[Math.floor(Math.random() * finds.length)];
     if (Math.random() < 0.6 && G.addItem(id, 1)) { floater(c.x, c.y, `⚡ +1${ic(id)}`); toast(`Milo does zoomies and drops a ${nm(id).toLowerCase()} at your feet!`); }
@@ -286,6 +292,7 @@ function petCat(c) {
 
 function tapObject(o) {
   if (o.cat) return petCat(o.cat);
+  if (o.person) return talkTo(o.person);
   const b = BUILD[o.t];
   switch (b.kind) {
     case 'field':
@@ -447,6 +454,80 @@ function menuSheet() {
     <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
     <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
 }
+// ---------- quests & townsfolk ----------
+function rewardLine(r) {
+  const parts = [];
+  if (r.coins) parts.push(`🪙 ${fmtN(r.coins)}`);
+  if (r.xp) parts.push(`⭐ ${r.xp}`);
+  if (r.hg) parts.push(`⏳ ${r.hg}`);
+  if (r.items) for (const k in r.items) parts.push(`${ic(k)} ${r.items[k]}`);
+  return parts.join(' · ');
+}
+function goalsHtml(q) {
+  return q.goals.map(g => {
+    const p = Q.goalProgress(q, g), done = p >= g.n;
+    const icon = g.id ? (ITEMS[g.id] ? ic(g.id) : BUILD[g.id] ? BUILD[g.id].icon : ANIMALS[g.id] ? ANIMALS[g.id].icon : '•') : (g.key && g.key.includes(':') ? (ITEMS[g.key.split(':')[1]] ? ic(g.key.split(':')[1]) : g.key.startsWith('pet') ? '🐈' : '•') : '•');
+    return `<div class="goal ${done ? 'done' : ''}">${done ? '✅' : icon} <span>${g.label}</span><span class="spacer"></span>
+      <div class="bar"><div style="width:${p / g.n * 100}%"></div></div><b>${p}/${g.n}</b></div>`;
+  }).join('');
+}
+function questsSheet() {
+  Q.refreshQuests();
+  const list = Q.activeQuests();
+  if (!list.length) return '<p class="sub">No quests right now. Keep farming! New requests arrive as you level up.</p>';
+  return list.map(q => {
+    const p = PEOPLE[q.who], ready = Q.isComplete(q);
+    return `<div class="quest ${ready ? 'ready' : ''}"><div class="qh"><span class="face">${p.icon}</span><div><div class="qt">${q.title}</div><div class="sub" style="margin:0">${p.name}</div></div></div>
+      ${goalsHtml(q)}<div class="row" style="margin-top:8px"><span class="sub" style="margin:0">Reward: ${rewardLine(q.reward)}</span><span class="spacer"></span>
+      ${ready ? `<button class="btn" data-act="claimQuest" data-id="${q.id}">Claim</button>` : `<button class="btn alt sm" data-act="showQuest" data-id="${q.id}">Details</button>`}</div></div>`;
+  }).join('');
+}
+function questIntro(q) {
+  const p = PEOPLE[q.who];
+  Q.markSeen(q.id);
+  sfx.open();
+  modal(`<div class="portrait">${p.icon}</div><b>${p.name}</b><div class="sub">${q.title}</div>
+    <div class="say">${q.intro}</div><div style="text-align:left">${goalsHtml(q)}</div>
+    <p class="sub" style="margin-top:10px">Reward: ${rewardLine(q.reward)}</p>
+    <button class="btn wide" data-act="closeModal">I'm on it!</button>`);
+}
+function claimQuest(id) {
+  const q = Q.claim(id);
+  if (!q) { sfx.error(); toast('Not finished yet'); return; }
+  const p = PEOPLE[q.who];
+  sfx.deliver();
+  closeSheet();
+  modal(`<div class="portrait">${p.icon}</div><b>${p.name}</b><div class="sub">✅ ${q.title}</div>
+    <div class="say">${q.outro}</div><p><b>${rewardLine(q.reward)}</b></p>
+    ${q.flag === 'expedition' ? '<p class="sub">🗺️ The Explore button now shows the old map!</p>' : ''}
+    ${q.flag === 'ollieBench' ? '<p class="sub">🪑 Ollie will nap on your bench now.</p>' : ''}
+    <button class="btn wide" data-act="closeModal">Wonderful!</button>`);
+  G.save(); refreshHud();
+}
+function talkTo(person) {
+  const def = PEOPLE[person.id];
+  const ready = Q.questsFor(person.id).find(Q.isComplete);
+  if (ready) return claimQuest(ready.id);
+  const act = Q.questsFor(person.id)[0];
+  if (act) return questIntro(act);
+  sfx.tap();
+  const lines = ['Lovely day for it, isn\'t it?', 'The town looks better every day, thanks to you.', `Have you met Ollie? Biggest cat I've ever seen.`, 'Milo zoomed past me three times this morning!', 'Keep up the good work, farmer!'];
+  modal(`<div class="portrait">${def.icon}</div><b>${def.name}</b><div class="sub">${def.blurb}</div>
+    <div class="say">${lines[Math.floor(Math.random() * lines.length)]}</div><button class="btn wide" data-act="closeModal">Bye for now</button>`);
+}
+function questTick() {
+  const started = Q.refreshQuests();
+  if (started.length) G.save();
+  for (const p of people) {
+    p.visible = Q.introduced(p.id);
+    const mine = Q.questsFor(p.id);
+    p.badge = mine.some(Q.isComplete) ? '✓' : mine.some(q => !G.S.quests.active[q.id].seen) ? '!' : null;
+  }
+  const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length;
+  b.hidden = !n; b.textContent = n;
+  if ($('#modal').hidden && !levelQueue.length) { const u = Q.unseen()[0]; if (u) questIntro(u); }
+}
+
 function masteryList() {
   const rows = [];
   for (const k in CROPS) if (CROPS[k].lvl <= G.S.level) rows.push(['crop', k]);
@@ -455,6 +536,8 @@ function masteryList() {
     rows.map(([kind, id]) => `<div class="invrow"><span class="ic">${ic(id)}</span><div><div class="n">${nm(id)}</div><div class="nm">${starStr(kind, id)} ${masteryLine(kind, id)}</div></div></div>`).join('') + '</div>';
 }
 function exploreSheet() {
+  if (!Q.hasFlag('expedition')) return `<div style="font-size:48px;text-align:center">🌲</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
+    <p class="sub">Grandma Ellis says Milo keeps disappearing past the tree line. Maybe he knows something. (Unlocks through the quest "Where Does Milo Go?")</p>`;
   return `<div style="font-size:48px;text-align:center">🗺️</div><p>Beyond the tree line lie the hills and hollows around Pelham Acres.
     The expedition map — with fog to uncover, rare materials, and hidden treasures — arrives in the next update.</p>
     <p class="sub">Until then, clear trees and rocks around your farm to find wood and stone.</p>`;
@@ -464,7 +547,7 @@ document.querySelectorAll('[data-tb]').forEach(btn => btn.addEventListener('clic
   endPlant(); if (view.ghost) cancelPlace();
   const k = btn.dataset.tb;
   if (sheetFn && $('#sheetTitle').dataset.k === k) { closeSheet(); $('#sheetTitle').dataset.k = ''; return; }
-  ({ shop: () => openSheet('Shop', shopSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet),
+  ({ shop: () => openSheet('Shop', shopSheet), quests: () => openSheet('Quests', questsSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet),
      explore: () => openSheet('Explore', exploreSheet), menu: () => openSheet('Menu', menuSheet) })[k]();
   $('#sheetTitle').dataset.k = k;
 }));
@@ -550,7 +633,11 @@ function onTap(sx, sy) {
 // ---------- boot ----------
 function afterLoad() { G.refreshOrders(); cam.z = innerWidth < 600 ? 0.8 : 1; centerOn(14, 13); refreshHud(); }
 initRender(cv);
-setCatGrid(G.objAt);
+setCatGrid(G.objAt, c => {
+  if (c.id !== 'ollie' || !Q.hasFlag('ollieBench')) return null;
+  const b = G.findObj('bench'); return b ? { x: b.x + 0.5, y: b.y + 0.55 } : null;
+});
+setPeople(PEOPLE);
 const loaded = G.load();
 if (!loaded) { G.newGame(); G.save(); }
 afterLoad();
@@ -579,7 +666,7 @@ if (!loaded) {
 
 function frame() { draw(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
-setInterval(() => { refreshHud(); liveUpdate(); }, 500);
+setInterval(() => { refreshHud(); liveUpdate(); questTick(); }, 500);
 setInterval(() => G.save(), 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); });
 addEventListener('pagehide', () => G.save());

@@ -22,7 +22,7 @@ function addMastery(kind, id) {
   const before = stars(kind, id);
   S.mastery[kind + ':' + id] = masteryCount(kind, id) + 1;
   const after = stars(kind, id);
-  if (after > before) { S.coins += after * 40; S.hg += 1; hooks.onMastery && hooks.onMastery(kind, id, after); }
+  if (after > before) { S.coins += after * 40; S.hg += 1; stat('star'); hooks.onMastery && hooks.onMastery(kind, id, after); }
 }
 export const canUpgrade = o => ['producer', 'pen', 'house'].includes(BUILD[o.t].kind);
 export function nextUpgradeCost(o) { return blvl(o) >= MAX_BLVL ? null : upgradeCost(BUILD[o.t], blvl(o)); }

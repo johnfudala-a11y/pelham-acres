@@ -118,8 +118,20 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
   transition: opacity .2s, transform .2s; z-index: 30; max-width: 90vw; text-align: center; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+.quest { background: var(--paper2); border: 2px solid var(--edge); border-radius: 16px; padding: 10px 12px; margin-bottom: 10px; }
+.quest.ready { border-color: #9CCB6E; background: #F3FAEA; }
+.quest .qh { display: flex; gap: 10px; align-items: center; }
+.quest .face { font-size: 30px; }
+.quest .qt { font-weight: 800; }
+.goal { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 6px; }
+.goal .bar { flex: 1; max-width: 140px; }
+.goal.done { color: #2F5A12; }
+.say { background: var(--paper2); border: 2px solid var(--edge); border-radius: 16px; padding: 12px 14px; text-align: left; font-size: 16px; line-height: 1.45; margin: 10px 0; position: relative; }
+.portrait { font-size: 56px; line-height: 1; }
 @media (max-width: 520px) {
-  .tb { width: 58px; height: 58px; font-size: 24px; border-radius: 16px; }
+  #toolbar { gap: 6px; }
+  .tb { width: 54px; height: 56px; font-size: 22px; border-radius: 16px; }
+  .tb span { font-size: 11px; }
   .pill { font-size: 15px; padding: 5px 10px; }
   .xpbar { width: 60px; }
   #modebar { bottom: calc(env(safe-area-inset-bottom) + 84px); }
