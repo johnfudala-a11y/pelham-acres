@@ -153,19 +153,28 @@ function drawBox(x, y, w, h, hgt, wall, roof, roofH, icon) {
 function drawField(o, t) {
   const soil = spr('soil');
   if (soil) {
-    const [cx, cy] = P(o.x + 0.5, o.y + 0.5), by = P(o.x + 1, o.y + 1)[1];
-    drawSprite(soil, cx, by + 3, TW * 1.02, false, true);
+    const [cx, cy] = P(o.x + 0.5, o.y + 0.5), top = P(o.x, o.y)[1];
+    // paint the soil texture flat into this tile's diamond only (no raised edge, no spill onto neighbours)
+    const tile = diamond(o.x, o.y, 1, 1, 1.5);
+    ctx.save();
+    poly(tile, '#7A5230');
+    ctx.clip();
+    const sw = TW * 1.12, sh = sw * soil.naturalHeight / soil.naturalWidth;
+    ctx.drawImage(soil, cx - sw / 2, top - sh * 0.06, sw, sh);
+    ctx.restore();
+    poly(tile, null, 'rgba(60,35,15,.45)');
     if (!o.crop) return;
     const p = Math.min(1, (t - o.start) / Math.max(1, o.end - o.start));
     const ripe = p >= 1 && spr('crop-' + o.crop);
+    // plants stand on the middle of their own plot
     if (ripe) {
-      const sway = Math.sin(t / 700 + o.id) * 0.8;
-      drawSprite(ripe, cx + sway, cy + 15, 57, (o.id & 1) === 1, true);
-      if (((t / 900 + o.id) % 3) < 0.25) { ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(cx + 14, cy - 26, 2.2, 0, 7); ctx.fill(); }
+      const sway = Math.sin(t / 700 + o.id) * 0.6;
+      drawSprite(ripe, cx + sway, cy + 9, 46, (o.id & 1) === 1, true);
+      if (((t / 900 + o.id) % 3) < 0.25) { ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(cx + 12, cy - 22, 2.2, 0, 7); ctx.fill(); }
       return;
     }
     const stage = spr(p < 0.4 ? 'sprout' : 'growing');
-    if (stage) { const w = p < 0.4 ? 30 + p * 20 : 34 + p * 12; drawSprite(stage, cx, cy + 11, w, (o.id & 1) === 1, true); return; }
+    if (stage) { const w = p < 0.4 ? 26 + p * 15 : 32 + p * 10; drawSprite(stage, cx, cy + 7, w, (o.id & 1) === 1, true); return; }
   }
   const pts = diamond(o.x, o.y, 1, 1, 2);
   poly(pts, '#8A5A2E', 'rgba(60,35,15,.4)');
