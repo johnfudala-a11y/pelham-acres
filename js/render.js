@@ -18,8 +18,9 @@ const SPRITE_CFG = {
   flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 0.93 }, fountain: { k: 0.93 }, windmill: { k: 0.97 },
 };
 const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
-  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
-  'soil', 'sprout', 'growing', ...Object.keys(CROPS).map(c => 'crop-' + c)];
+  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'ollie-w1', 'ollie-w2', 'milo-r1', 'milo-r2', 'milo-sit','p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
+  'soil', 'sprout', 'growing', ...Object.keys(CROPS).map(c => 'crop-' + c),
+  ...['joe', 'dottie', 'tom', 'rosa', 'finch', 'ellis'].flatMap(id => ['p-' + id + '-w1', 'p-' + id + '-w2'])];
 export function loadSprites() {
   const load = (n, tries) => {
     const im = new Image();
@@ -566,9 +567,27 @@ function drawCat(c, pt) {
   const moving = isWalking(c, pt);
   const cim = spr(c.fat ? (c.nap ? 'ollie-sleep' : 'ollie') : 'milo');
   if (cim) {
-    const lift = c.fat ? (moving ? Math.abs(Math.sin(pt / 160)) * 1.5 : 0) : (moving ? Math.abs(Math.sin(pt / 70)) * 4 : 0);
-    const breathe = c.nap ? Math.sin(pt / 700) * 0.6 : 0;
-    drawSprite(cim, px, py + 3 - lift, (c.fat ? (c.nap ? 38 : 34) : 32) + breathe, c.face < 0);
+    // Painted animation frames: Ollie waddles (two slow alternating steps), Milo gallops
+    // (stretch / gather, fast) and sits up when he stops. Falls back to the still pose.
+    let im = cim, w = c.fat ? (c.nap ? 38 : 34) : 32, lift = 0;
+    if (c.fat && !c.nap && moving) {
+      const a = spr('ollie-w1'), b = spr('ollie-w2');
+      if (a && b) { const ph = pt / 280; im = Math.floor(ph) % 2 ? b : a; w = 36; lift = Math.abs(Math.sin(ph * Math.PI)) * 1.2; }
+      else lift = Math.abs(Math.sin(pt / 160)) * 1.5;
+    } else if (!c.fat && moving) {
+      const a = spr('milo-r1'), b = spr('milo-r2');
+      const fast = pt < c.zoomUntil, ph = pt / (fast ? 75 : 105);
+      if (a && b) {
+        const leap = Math.floor(ph) % 2 === 0;
+        im = leap ? a : b; w = leap ? 40 : 30;
+        lift = leap ? Math.sin((ph % 1) * Math.PI) * 5 : 0; // airborne on the stretch, grounded on the gather
+      } else lift = Math.abs(Math.sin(pt / 70)) * 4;
+    } else if (!c.fat) {
+      const s = spr('milo-sit');
+      if (s) { im = s; w = 20; }
+    }
+    const breathe = c.nap ? Math.sin(pt / 700) * 0.6 : (!moving ? Math.sin(pt / 900 + c.x) * 0.3 : 0);
+    drawSprite(im, px, py + 3 - lift, w + breathe, c.face < 0);
     if (c.nap) {
       const zy = ((pt / 1200) % 1);
       ctx.globalAlpha = 1 - zy; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(60,40,20,.5)'; ctx.lineWidth = 2; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
@@ -674,21 +693,36 @@ function drawPerson(p, pt) {
   const step = moving ? Math.sin(pt / 140) * 2.5 : 0;
   const pim = spr('p-' + p.id);
   if (pim) {
-    // walk cycle: bounce on each step, rock side to side, squash a little on landing;
-    // when standing still, breathe gently instead
-    const h = 50, w = h * pim.naturalWidth / pim.naturalHeight;
+    // Walk cycle: stride-left → passing → stride-right → passing, using painted walking frames.
+    // The body rises slightly on the passing frames and dips on the strides, like a real gait.
+    // When standing still they breathe gently instead.
+    const w1 = spr('p-' + p.id + '-w1'), w2 = spr('p-' + p.id + '-w2');
+    const frames = w1 && w2;
     const ph = pt / 165 + p.home[0] * 3.1;
-    const sw = Math.sin(ph), stepUp = moving ? Math.abs(sw) : 0;
-    const bounce = stepUp * 4;
-    const tilt = moving ? sw * 0.09 : Math.sin(pt / 1400 + p.home[1]) * 0.015;
-    const squash = moving ? (1 - stepUp) * 0.05 : Math.sin(pt / 800 + p.home[0]) * 0.012;
+    const beat = Math.floor(ph) % 4;                         // which of the 4 walk frames
+    const frac = ph - Math.floor(ph);
+    let img = pim, bounce, tilt, squash, stepUp;
+    if (moving && frames) {
+      img = beat === 0 ? w1 : beat === 2 ? w2 : pim;
+      const passing = beat === 1 || beat === 3;
+      stepUp = passing ? Math.sin(frac * Math.PI) : 0;
+      bounce = stepUp * 2.5;
+      tilt = (beat < 2 ? 1 : -1) * 0.025;
+      squash = passing ? 0 : 0.02 * Math.sin(frac * Math.PI);
+    } else {
+      const sw = Math.sin(ph); stepUp = moving ? Math.abs(sw) : 0;
+      bounce = stepUp * 4;
+      tilt = moving ? sw * 0.09 : Math.sin(pt / 1400 + p.home[1]) * 0.015;
+      squash = moving ? (1 - stepUp) * 0.05 : Math.sin(pt / 800 + p.home[0]) * 0.012;
+    }
+    const h = 50, w = h * img.naturalWidth / img.naturalHeight;
     ctx.fillStyle = 'rgba(30,40,10,0.22)';
     ctx.beginPath(); ctx.ellipse(px, py + 3, w * 0.42 * (1 - stepUp * 0.15), w * 0.14, 0, 0, 7); ctx.fill();
     ctx.save();
     ctx.translate(px, py + 4 - bounce);
     ctx.rotate(tilt);
     ctx.scale((p.face < 0 ? -1 : 1) * (1 + squash * 0.6), 1 - squash);
-    ctx.drawImage(pim, -w / 2, -h, w, h);
+    ctx.drawImage(img, -w / 2, -h, w, h);
     ctx.restore();
     drawBadge(p, px, py, pt);
     return;
