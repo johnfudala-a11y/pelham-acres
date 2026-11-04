@@ -5,7 +5,7 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.14';
+export const APP_VERSION = '0.15';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
 

@@ -11,11 +11,12 @@ export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
 export const SPRITES = {};
 const SPRITE_CFG = {
   // every picture fits inside its own ground space (k <= 1), so neighbours never overlap side-to-side
-  barn: { k: 0.97 }, feedMill: { k: 0.97 }, bakery: { k: 0.9 }, workshop: { k: 0.97 }, dairy: { k: 0.97 }, sugarMill: { k: 0.97 },
-  kitchen: { k: 0.97 }, loom: { k: 0.97 }, cafe: { k: 0.9 },
-  cottage: { k: 0.93 }, farmhouse: { k: 0.97 }, townhouse: { k: 0.7 }, manor: { k: 0.97 },
-  townHall: { k: 0.97 }, generalStore: { k: 0.97 }, schoolhouse: { k: 0.97 }, clockTower: { k: 0.44 }, bandstand: { k: 0.93 }, station: { k: 0.97 },
-  flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 0.93 }, fountain: { k: 0.93 }, windmill: { k: 0.97 },
+  // iso: painted at the grid's isometric angle, so the picture's bottom corner sits on the footprint's front corner
+  barn: { k: 1, iso: 1 }, feedMill: { k: 1, iso: 1 }, bakery: { k: 1, iso: 1 }, workshop: { k: 1, iso: 1 }, dairy: { k: 1, iso: 1 }, sugarMill: { k: 1, iso: 1 },
+  kitchen: { k: 1, iso: 1 }, loom: { k: 1, iso: 1 }, cafe: { k: 1, iso: 1 },
+  cottage: { k: 1, iso: 1 }, farmhouse: { k: 1, iso: 1 }, townhouse: { k: 0.85, iso: 1 }, manor: { k: 1, iso: 1 },
+  townHall: { k: 1, iso: 1 }, generalStore: { k: 1, iso: 1 }, schoolhouse: { k: 1, iso: 1 }, clockTower: { k: 0.62, iso: 1 }, bandstand: { k: 1, iso: 1 }, station: { k: 1, iso: 1 },
+  flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 1, iso: 1 }, fountain: { k: 1, iso: 1 }, windmill: { k: 0.9, iso: 1 },
 };
 const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
   'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'ollie-w1', 'ollie-w2', 'milo-r1', 'milo-r2', 'milo-sit','p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
@@ -261,6 +262,66 @@ function drawRock(o) {
   poly([[cx - 10 * s, cy - 14 * s], [cx + 2 * s, cy - 20 * s], [cx + 14 * s, cy - 10 * s], [cx, cy - 8 * s]], '#B9B6AE');
 }
 
+// ---------- farm animals: each one wanders, grazes and rests on its own inside its pen ----------
+// speed in tiles/s; stride = tiles per step cycle; hop = px lift per step; waddle = body roll per step;
+// idle/graze = how long (ms) they stand around or keep their head down; walk = how far they go in one trip.
+const HERD_SPEC = {
+  chicken: { speed: 0.75, stride: 0.09, hop: 1.6, waddle: 0.14, idle: [500, 1800], graze: [900, 2600], walk: [0.3, 1.0], space: 0.28 },
+  cow:     { speed: 0.2,  stride: 0.3,  hop: 0.7, waddle: 0.03, idle: [2500, 6000], graze: [5000, 12000], walk: [0.4, 1.1], space: 0.6 },
+  sheep:   { speed: 0.3,  stride: 0.22, hop: 1.0, waddle: 0.05, idle: [1800, 4500], graze: [3500, 9000], walk: [0.3, 1.0], space: 0.48 },
+};
+const herd = new Map();
+const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+// a free spot inside the pen, away from the shelter in the back corner
+const penOK = (b, u, v) => u > 0.18 && v > 0.18 && u < b.w - 0.15 && v < b.h - 0.15 && !(u < 0.88 && v < 0.88);
+function penSpot(b, cu, cv, dist) {
+  for (let k = 0; k < 20; k++) {
+    const ang = Math.random() * Math.PI * 2, d = dist ? rnd(dist[0], dist[1]) : 0;
+    const u = dist ? cu + Math.cos(ang) * d : rnd(0.2, b.w - 0.18), v = dist ? cv + Math.sin(ang) * d : rnd(0.2, b.h - 0.18);
+    if (penOK(b, u, v)) return [u, v];
+  }
+  return [rnd(0.95, b.w - 0.2), rnd(0.95, b.h - 0.2)];
+}
+function herdStep(o, b, i, an, sp, t) {
+  const key = o.id + ':' + i;
+  let m = herd.get(key);
+  if (!m) {
+    const [u, v] = penSpot(b);
+    m = { u, v, tu: u, tv: v, mode: Math.random() < 0.5 ? 'graze' : 'idle', until: t + rnd(0, 3000), face: Math.random() < 0.5 ? 1 : -1, dist: 0, last: t };
+    herd.set(key, m);
+  }
+  const dt = Math.min(0.1, (t - m.last) / 1000); m.last = t;
+  const hungry = animalState(an) === 'hungry';
+  if (m.mode === 'walk') {
+    const du = m.tu - m.u, dv = m.tv - m.v, d = Math.hypot(du, dv), s = Math.min(d, sp.speed * (hungry ? 0.7 : 1) * dt);
+    if (d > 0.001) { m.u += du / d * s; m.v += dv / d * s; m.dist += s; }
+    if (Math.abs(du - dv) > 0.02) m.face = du - dv > 0 ? 1 : -1; // screen-space direction of travel
+    if (d - s < 0.01) {
+      // hungry animals don't graze: they stand and wait for feed
+      m.mode = !hungry && Math.random() < 0.65 ? 'graze' : 'idle';
+      m.until = t + rnd(...sp[m.mode]);
+    }
+  } else if (t > m.until) {
+    if (Math.random() < (hungry ? 0.3 : 0.55)) {
+      [m.tu, m.tv] = penSpot(b, m.u, m.v, sp.walk); m.mode = 'walk'; m.dist = 0;
+    } else {
+      m.mode = !hungry && Math.random() < 0.6 ? 'graze' : 'idle';
+      if (m.mode === 'idle' && Math.random() < 0.3) m.face = -m.face; // look around
+      m.until = t + rnd(...sp[m.mode]);
+    }
+  }
+  // personal space: nudge away from penmates so they don't stand inside each other
+  for (let j = 0; j < o.animals.length; j++) {
+    if (j === i) continue;
+    const n = herd.get(o.id + ':' + j); if (!n) continue;
+    const du = m.u - n.u, dv = m.v - n.v, d = Math.hypot(du, dv);
+    if (d < sp.space && d > 0.0001) {
+      const push = (sp.space - d) * 0.08, nu = m.u + du / d * push, nv = m.v + dv / d * push;
+      if (penOK(b, nu, nv)) { m.u = nu; m.v = nv; }
+    }
+  }
+  return m;
+}
 function drawPen(o, b, t) {
   const pts = diamond(o.x, o.y, b.w, b.h, 1);
   poly(pts, b.ground, 'rgba(80,60,30,.3)');
@@ -269,24 +330,40 @@ function drawPen(o, b, t) {
   if (shel) { const [sx, sy] = P(o.x + 0.55, o.y + 0.55); drawSprite(shel, sx, sy + 14, 74, false); }
   else drawBox(o.x + 0.1, o.y + 0.1, 0.9, 0.9, 18, b.wall, b.roof, 12, null);
   const a = penAnimal(o), aim = spr(b.animal), aw = { chicken: 22, cow: 38, sheep: 32 }[b.animal];
-  o.animals.map((an, i) => {
-    const r1 = hash(o.id * 31 + i), r2 = hash(o.id * 17 + i * 3);
-    const wob = Math.sin(t / 2600 + i * 2);
-    const fx = 0.35 + 0.55 * ((r1 + wob * 0.12 + 1) % 1);
-    const fy = 0.45 + 0.45 * ((r2 + Math.cos(t / 3100 + i) * 0.12 + 1) % 1);
-    return { an, i, fx, fy, flip: Math.cos(t / 2600 + i * 2) < 0 };
-  }).sort((p, q) => (p.fx + p.fy) - (q.fx + q.fy)).forEach(({ an, i, fx, fy, flip }) => {
-    const [sx, sy] = P(o.x + fx * b.w, o.y + fy * b.h);
-    const st = animalState(an), bob = st === 'busy' ? Math.sin(t / 250 + i) : 0;
+  const sp = HERD_SPEC[b.animal] || HERD_SPEC.sheep;
+  const members = o.animals.map((an, i) => ({ an, i, m: herdStep(o, b, i, an, sp, t) }));
+  members.sort((p, q) => (p.m.u + p.m.v) - (q.m.u + q.m.v)).forEach(({ an, i, m }) => {
+    const [sx, sy] = P(o.x + m.u, o.y + m.v);
+    const st = animalState(an);
     if (aim) {
-      // gentle waddle so farm animals don't slide around
-      const wd = Math.sin(t / 220 + i * 1.7);
-      ctx.fillStyle = 'rgba(30,40,10,0.2)'; ctx.beginPath(); ctx.ellipse(sx, sy + 1, aw * 0.4, aw * 0.13, 0, 0, 7); ctx.fill();
-      ctx.save(); ctx.translate(sx, sy + 2 + bob - Math.abs(wd) * 1.5); ctx.rotate(wd * 0.06); ctx.scale(flip ? -1 : 1, 1);
-      const ah = aw * aim.naturalHeight / aim.naturalWidth; ctx.drawImage(aim, -aw / 2, -ah, aw, ah); ctx.restore();
+      // pose: stepping only while walking; head-down when grazing/pecking; slow breathing when standing
+      let lift = 0, tilt = 0, squash = 0;
+      if (m.mode === 'walk') {
+        const ph = m.dist / sp.stride;
+        lift = Math.abs(Math.sin(ph * Math.PI)) * sp.hop;
+        tilt = Math.sin(ph * Math.PI) * sp.waddle;
+      } else if (m.mode === 'graze') {
+        if (b.animal === 'chicken') {
+          const p = ((t + i * 377) % 700) / 700;            // quick pecks with pauses between
+          tilt = p < 0.3 ? Math.sin(p / 0.3 * Math.PI) * 0.45 : 0;
+        } else {
+          tilt = 0.12 + Math.sin(t / 420 + i) * 0.015;       // head down, chewing
+        }
+      } else {
+        squash = Math.sin(t / 900 + i * 2) * 0.012;
+        if (b.animal === 'chicken' && ((t + i * 911) % 3000) < 160) tilt = -0.12; // a curious head-flick
+      }
+      ctx.fillStyle = 'rgba(30,40,10,0.2)'; ctx.beginPath(); ctx.ellipse(sx, sy + 1, aw * 0.4 * (1 - lift * 0.04), aw * 0.13, 0, 0, 7); ctx.fill();
+      const ah = aw * aim.naturalHeight / aim.naturalWidth;
+      ctx.save(); ctx.translate(sx, sy + 2 - lift); ctx.scale(m.face, 1 - squash);
+      ctx.translate(-aw * 0.28, 0); ctx.rotate(tilt); ctx.translate(aw * 0.28, 0); // pivot on the back legs
+      ctx.drawImage(aim, -aw / 2, -ah, aw, ah); ctx.restore();
     }
-    else emoji(a.icon, sx, sy - 8 + bob, 17);
-    if (st === 'ready') emoji(ITEMS[a.product].icon, sx + 9, sy - (aim ? aw * 0.9 : 20), 10);
+    else emoji(a.icon, sx, sy - 8, 17);
+    if (st === 'ready') {
+      const pi = iconImg(a.product), y = sy - (aim ? aw * 0.95 : 22) + Math.sin(t / 400 + i) * 1.5;
+      if (pi) ctx.drawImage(pi, sx + 2, y - 8, 15, 15); else emoji(ITEMS[a.product].icon, sx + 9, y, 10);
+    }
   });
   // fence
   const T = P(o.x, o.y), R = P(o.x + b.w, o.y), B = P(o.x + b.w, o.y + b.h), L = P(o.x, o.y + b.h);
@@ -505,9 +582,11 @@ function drawObj(o, t) {
     const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1];
     const lot = b.kind !== 'decor';
     if (lot) drawLot(o, b);
-    // buildings sit a little inside their lot so its front edge shows all round
-    const sk = lot ? 0.86 : 1, back = lot ? (b.w + b.h) * hh * 0.16 : 0;
-    drawSprite(sp, cx, by + 4 + (cfg.dy || 0) - back, footW(b) * cfg.k * sk, false, lot);
+    if (cfg.iso) {
+      // contact shadow along the footprint, then the building with its front corner on the footprint's front corner
+      poly(diamond(o.x, o.y, b.w, b.h), 'rgba(40,30,10,.18)');
+      drawSprite(sp, cx, by + 3 + (cfg.dy || 0), footW(b) * cfg.k, false, true);
+    } else drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, false, lot);
     if (b.kind === 'station') drawTrain(o, b, t);
     if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
     return;
