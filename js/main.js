@@ -5,9 +5,9 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.13';
+export const APP_VERSION = '0.14';
 import { loadSprites } from './render.js';
-import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
+import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
 
 const $ = s => document.querySelector(s);
 const now = G.now;
@@ -850,6 +850,29 @@ setCatGrid(G.objAt, c => {
   const b = G.findObj('bench'); return b ? { x: b.x + 0.5, y: b.y + 0.55 } : null;
 });
 setPeople(PEOPLE);
+// Each townsperson's day: the kinds of places they work at, and the icon shown while they're busy there.
+const ROUTINES = {
+  hattie: { townHall: 'scroll', fountain: 'heart', gazebo: 'blossom', bandstand: 'ribbon', clockTower: 'hourglass', cottage: 'mail', farmhouse: 'mail', townhouse: 'mail', generalStore: 'basket', schoolhouse: 'journal' },
+  joe:    { field: 'fertilizer', coop: 'egg', cowshed: 'milk', sheepfold: 'wool', feedMill: 'chickenFeed', barn: 'crate' },
+  dottie: { bakery: 'bread', dairy: 'butter', sugarMill: 'brownSugar', coop: 'egg', kitchen: 'strawberryJam', cafe: 'cookies' },
+  tom:    { workshop: 'gear', tree: 'axe', rock: 'pickaxe', fence: 'planks', station: 'nails', bench: 'nails', schoolhouse: 'planks' },
+  rosa:   { cafe: 'coffeeCup', kitchen: 'tomatoSauce', cottage: 'mail', farmhouse: 'mail', townhouse: 'mail', pond: 'heart', flowers: 'blossom', generalStore: 'basket' },
+  finch:  { generalStore: 'coin', station: 'crate', barn: 'journal', townHall: 'scroll', loom: 'cottonFabric', bakery: 'bread' },
+  ellis:  { bench: 'heart', flowers: 'blossom', pond: 'heart', hedge: 'blossom', coop: 'chickenFeed', loom: 'yarn', gazebo: 'blossom' },
+};
+setErrands(id => {
+  const r = ROUTINES[id]; if (!r) return [];
+  const byType = {};
+  for (const o of G.S.objs) if (r[o.t]) (byType[o.t] ||= []).push(o);
+  const out = [];
+  for (const t in byType) {
+    const list = byType[t], b = BUILD[t];
+    // a few of the many fields/trees, so big farms don't crowd out everything else
+    for (const o of list.sort(() => Math.random() - 0.5).slice(0, 2)) out.push({ key: t + o.x + ',' + o.y, x: o.x, y: o.y, w: b.w, h: b.h, icon: r[t] });
+  }
+  if (id === 'ellis') { const c = cats[Math.floor(Math.random() * 2)]; out.push({ key: 'cat', x: Math.floor(c.x), y: Math.floor(c.y), w: 1, h: 1, icon: 'heart' }); }
+  return out;
+});
 const loaded = G.load();
 if (!loaded) { G.newGame(); G.save(); }
 afterLoad();

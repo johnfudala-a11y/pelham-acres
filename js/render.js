@@ -2,7 +2,7 @@
 // later each type can be swapped for an AI-generated sprite via SPRITES.
 import { TW, TH, MAP, BUILD, CROPS, ITEMS } from './data.js';
 import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState } from './game.js';
-import { setNavGrid, planTo, wander, stepWalker, isWalking, unstick } from './nav.js';
+import { setNavGrid, planTo, wander, stepWalker, isWalking, unstick, walkable } from './nav.js';
 
 export const cam = { x: 0, y: 0, z: 1 };
 export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
@@ -503,7 +503,11 @@ function drawObj(o, t) {
   const cfg = SPRITE_CFG[o.t], sp = cfg && spr(o.t);
   if (sp) {
     const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1];
-    drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, false);
+    const lot = b.kind !== 'decor';
+    if (lot) drawLot(o, b);
+    // buildings sit a little inside their lot so its front edge shows all round
+    const sk = lot ? 0.86 : 1, back = lot ? (b.w + b.h) * hh * 0.16 : 0;
+    drawSprite(sp, cx, by + 4 + (cfg.dy || 0) - back, footW(b) * cfg.k * sk, false, lot);
     if (b.kind === 'station') drawTrain(o, b, t);
     if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
     return;
@@ -520,6 +524,24 @@ function drawObj(o, t) {
       if (b.kind === 'station') drawTrain(o, b, t);
       if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
   }
+}
+// A packed-earth lot exactly on the building's grid squares, so it reads as standing on its tiles.
+function drawLot(o, b) {
+  poly(diamond(o.x, o.y, b.w, b.h, 1), 'rgba(122,96,54,.55)');
+  poly(diamond(o.x, o.y, b.w, b.h, 3), '#CDB98E');
+  ctx.save(); ctx.clip();
+  // soft shade toward the back corners, gravel speckles
+  const [tx, ty] = P(o.x, o.y), [bx, byy] = P(o.x + b.w, o.y + b.h);
+  const g = ctx.createLinearGradient(tx, ty, bx, byy);
+  g.addColorStop(0, 'rgba(90,70,40,.28)'); g.addColorStop(0.6, 'rgba(90,70,40,0)');
+  ctx.fillStyle = g; ctx.fillRect(Math.min(tx, bx) - 200, ty, 400 + Math.abs(bx - tx), byy - ty);
+  ctx.fillStyle = 'rgba(110,88,52,.35)';
+  for (let i = 0; i < 6 * b.w * b.h; i++) {
+    const u = ((o.x * 7 + i * 13) % 17) / 17, v = ((o.y * 11 + i * 7) % 19) / 19;
+    const [sx, sy] = P(o.x + u * b.w, o.y + v * b.h);
+    ctx.fillRect(sx, sy, 2, 1);
+  }
+  ctx.restore();
 }
 function drawLevelBadge(o, b) {
   const [lx, ly] = P(o.x + b.w, o.y + b.h);
@@ -668,22 +690,61 @@ export function setPeople(defs) {
     people.push({ id, person: true, def: d, home: [hx + 0.5, hy + 0.5], x: hx + 0.5, y: hy + 0.5, path: null, speed: 0.55, pause: 0, face: 1, visible: false, badge: null });
   }
 }
+// ---------- errands: townsfolk walk to the places tied to their jobs and work there a while ----------
+let errandsFor = () => [];
+export function setErrands(fn) { errandsFor = fn; }
+const ICONS = {};
+function iconImg(n) {
+  let im = ICONS[n];
+  if (!im) { im = ICONS[n] = new Image(); im.src = 'sprites/icon-' + n + '.webp'; }
+  return im.complete && im.naturalWidth ? im : null;
+}
+// Plan a route to a free tile beside the target's footprint (front sides first, since they're visible).
+function planBeside(p, t) {
+  const w = t.w || 1, h = t.h || 1, spots = [];
+  for (let i = 0; i < w; i++) spots.push([t.x + i, t.y + h, 0]);
+  for (let j = 0; j < h; j++) spots.push([t.x + w, t.y + j, 0]);
+  for (let i = 0; i < w; i++) spots.push([t.x + i, t.y - 1, 1]);
+  for (let j = 0; j < h; j++) spots.push([t.x - 1, t.y + j, 1]);
+  spots.sort((a, b) => a[2] - b[2] || Math.random() - 0.5);
+  for (const [x, y] of spots) if (walkable(p, x, y) && planTo(p, x, y)) return true;
+  return false;
+}
 function personGo(p) {
-  if (wander(p, p.home[0], p.home[1], 4)) return;
-  if (wander(p, p.x, p.y, 6)) return;
-  wander(p, 15, 13, 4);
+  p.task = null;
+  const list = errandsFor(p.id) || [];
+  if (list.length && Math.random() < 0.85) {
+    const opts = list.filter(e => e.key !== p.lastKey).sort(() => Math.random() - 0.5);
+    for (const e of opts.slice(0, 6)) {
+      if (planBeside(p, e)) { p.task = e; p.lastKey = e.key; return; }
+    }
+  }
+  // nothing to do right now: a stroll somewhere around their own part of town
+  if (wander(p, p.home[0], p.home[1], 6)) return;
+  if (wander(p, p.x, p.y, 7)) return;
+  wander(p, 15, 13, 5);
 }
 function updatePeople(pt) {
   const dt = lastPeopleT ? Math.min(0.1, (pt - lastPeopleT) / 1000) : 0; lastPeopleT = pt;
   for (const p of people) {
     if (!p.visible) continue;
     unstick(p);
-    if (pt < p.pause) { if (Math.random() < 0.003) p.face = -p.face; continue; } // glance around while standing
+    if (pt < p.pause) { if (!p.doing && Math.random() < 0.003) p.face = -p.face; continue; } // glance around while standing
+    if (p.doing) { p.doing = null; personGo(p); continue; } // finished the job: off to the next errand
     const st = stepWalker(p, dt, p.speed);
     if (st === 'moving') continue;
     if (st === 'blocked') { personGo(p); continue; }
-    p.pause = pt + 2000 + Math.random() * 6000;
-    personGo(p);
+    if (p.task) {
+      // arrived: turn toward the building and get to work for a while
+      const t = p.task, cx = t.x + (t.w || 1) / 2, cy = t.y + (t.h || 1) / 2;
+      const sdx = (cx - cy) - (p.x - p.y);
+      if (Math.abs(sdx) > 0.05) p.face = sdx > 0 ? 1 : -1;
+      p.doing = t; p.doStart = pt; p.task = null;
+      p.pause = pt + 7000 + Math.random() * 9000;
+    } else {
+      p.pause = pt + 1500 + Math.random() * 3000;
+      personGo(p);
+    }
   }
 }
 let lastPeopleT = 0;
@@ -714,6 +775,12 @@ function drawPerson(p, pt) {
       bounce = stepUp * 4;
       tilt = moving ? sw * 0.09 : Math.sin(pt / 1400 + p.home[1]) * 0.015;
       squash = moving ? (1 - stepUp) * 0.05 : Math.sin(pt / 800 + p.home[0]) * 0.012;
+    }
+    if (p.doing && !moving) {
+      // busy at a job: lean in and out rhythmically (kneading, hammering, tending)
+      const s = Math.sin((pt - (p.doStart || 0)) / 260);
+      tilt = (p.face < 0 ? -1 : 1) * 0.07 * (0.5 + 0.5 * s);
+      squash = 0.025 * Math.max(0, s);
     }
     const h = 50, w = h * img.naturalWidth / img.naturalHeight;
     ctx.fillStyle = 'rgba(30,40,10,0.22)';
@@ -756,6 +823,20 @@ function drawBadge(p, px, py, pt) {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(p.badge, px, y + 0.5);
+    return;
+  }
+  // what they're busy with: a little thought bubble with a painted icon
+  const ic = p.doing && pt < p.pause && iconImg(p.doing.icon);
+  if (ic) {
+    const age = pt - (p.doStart || 0), left = p.pause - pt;
+    const a = Math.min(1, age / 400, left / 400);
+    const y = py - 64 + Math.sin(pt / 450) * 1.5;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(255,250,236,.95)'; ctx.strokeStyle = '#8B5A2B'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(px + 4, y, 12, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(px - 3, y + 15, 2.5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.drawImage(ic, px + 4 - 9, y - 9, 18, 18);
+    ctx.restore();
   }
 }
 
