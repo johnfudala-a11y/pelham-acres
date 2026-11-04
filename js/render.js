@@ -323,11 +323,12 @@ function herdStep(o, b, i, an, sp, t) {
   return m;
 }
 function drawPen(o, b, t) {
-  const pts = diamond(o.x, o.y, b.w, b.h, 1);
-  poly(pts, b.ground, 'rgba(80,60,30,.3)');
-  // little shelter in the back corner
+  drawPenGround(o, b);
+  // back fence, then the shelter in the back corner (its front corner on the corner tile's front corner)
+  const FT = P(o.x, o.y), FR = P(o.x + b.w, o.y), FL = P(o.x, o.y + b.h);
+  drawFenceRun(FL, FT, b.h * 3, true); drawFenceRun(FT, FR, b.w * 3, false);
   const shel = spr(o.t);
-  if (shel) { const [sx, sy] = P(o.x + 0.55, o.y + 0.55); drawSprite(shel, sx, sy + 14, 74, false); }
+  if (shel) { const [sx] = P(o.x + 0.5, o.y + 0.5), sy = P(o.x + 1, o.y + 1)[1]; drawSprite(shel, sx, sy + 3, TW * 1.12, false); }
   else drawBox(o.x + 0.1, o.y + 0.1, 0.9, 0.9, 18, b.wall, b.roof, 12, null);
   const a = penAnimal(o), aim = spr(b.animal), aw = { chicken: 22, cow: 38, sheep: 32 }[b.animal];
   const sp = HERD_SPEC[b.animal] || HERD_SPEC.sheep;
@@ -365,12 +366,52 @@ function drawPen(o, b, t) {
       if (pi) ctx.drawImage(pi, sx + 2, y - 8, 15, 15); else emoji(ITEMS[a.product].icon, sx + 9, y, 10);
     }
   });
-  // fence
+  // front fence goes in front of the animals
   const T = P(o.x, o.y), R = P(o.x + b.w, o.y), B = P(o.x + b.w, o.y + b.h), L = P(o.x, o.y + b.h);
-  ctx.strokeStyle = '#8B6A43'; ctx.lineWidth = 2;
-  for (const [p1, p2] of [[L, B], [B, R]]) {
-    for (const hgt of [5, 10]) { ctx.beginPath(); ctx.moveTo(p1[0], p1[1] - hgt); ctx.lineTo(p2[0], p2[1] - hgt); ctx.stroke(); }
-    for (let k = 0; k <= 4; k++) { const x = p1[0] + (p2[0] - p1[0]) * k / 4, y = p1[1] + (p2[1] - p1[1]) * k / 4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 13); ctx.stroke(); }
+  drawFenceRun(L, B, b.w * 3, true); drawFenceRun(B, R, b.h * 3, false, true);
+}
+// Pen yard: packed earth with straw, a darker rim, scattered tufts. Seeded per pen so it doesn't flicker.
+function drawPenGround(o, b) {
+  poly(diamond(o.x, o.y, b.w, b.h, 0), 'rgba(70,50,20,.35)');
+  poly(diamond(o.x, o.y, b.w, b.h, 2), b.animal === 'chicken' ? '#CDB17A' : b.animal === 'cow' ? '#A9C46E' : '#B5CF84');
+  ctx.save(); ctx.clip();
+  const [tx, ty] = P(o.x, o.y), [bx, by] = P(o.x + b.w, o.y + b.h);
+  const g = ctx.createLinearGradient(tx, ty, bx, by);
+  g.addColorStop(0, 'rgba(70,50,20,.22)'); g.addColorStop(0.5, 'rgba(70,50,20,0)'); g.addColorStop(1, 'rgba(255,240,200,.12)');
+  ctx.fillStyle = g; ctx.fillRect(tx - 200, ty, 400, by - ty);
+  for (let i = 0; i < 70 * b.w * b.h; i++) {
+    const u = hash(o.id * 97 + i), v = hash(o.id * 53 + i * 7), [sx, sy] = P(o.x + u * b.w, o.y + v * b.h), k = hash(i * 13 + o.id);
+    if (k < 0.45) { ctx.strokeStyle = 'rgba(232,200,110,.75)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx - 2, sy); ctx.lineTo(sx + 2, sy - 1 + k * 2); ctx.stroke(); } // straw
+    else if (k < 0.75) { ctx.fillStyle = 'rgba(110,80,40,.28)'; ctx.fillRect(sx, sy, 2, 1); }                                          // dirt
+    else { ctx.fillStyle = 'rgba(70,120,40,.5)'; ctx.fillRect(sx, sy - 2, 1, 3); ctx.fillRect(sx + 2, sy - 1, 1, 2); }                   // grass tuft
+  }
+  ctx.restore();
+}
+// A rustic post-and-rail fence from p1 to p2 with n sections: shaded rails, posts with caps.
+function drawFenceRun(p1, p2, n, leftFace, gate) {
+  const side = leftFace ? '#8A5E33' : '#74492A', top = '#B88A55', post = '#6B4424', cap = '#C69C66';
+  const at = k => [p1[0] + (p2[0] - p1[0]) * k / n, p1[1] + (p2[1] - p1[1]) * k / n];
+  const gateK = gate ? Math.floor(n / 2) : -1;
+  for (const h of [5, 11]) {
+    for (let k = 0; k < n; k++) {
+      if (k === gateK) continue;
+      const [ax, ay] = at(k), [cx, cy] = at(k + 1);
+      ctx.fillStyle = side; ctx.beginPath(); ctx.moveTo(ax, ay - h); ctx.lineTo(cx, cy - h); ctx.lineTo(cx, cy - h + 3); ctx.lineTo(ax, ay - h + 3); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = top; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(ax, ay - h); ctx.lineTo(cx, cy - h); ctx.stroke();
+    }
+  }
+  if (gateK >= 0) {
+    // a little swing gate, slightly ajar
+    const [ax, ay] = at(gateK), [cx, cy] = at(gateK + 1), mx = ax + (cx - ax) * 0.85, my = ay + (cy - ay) * 0.85 + 3;
+    ctx.strokeStyle = '#9C6B3C'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); for (const h of [4, 8, 12]) { ctx.moveTo(ax, ay - h); ctx.lineTo(mx, my - h); } ctx.moveTo(ax, ay - 4); ctx.lineTo(mx, my - 12); ctx.stroke();
+  }
+  for (let k = 0; k <= n; k++) {
+    const [x, y] = at(k);
+    ctx.fillStyle = 'rgba(40,25,10,.22)'; ctx.beginPath(); ctx.ellipse(x + 1, y + 1, 3, 1.3, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = post; ctx.fillRect(x - 1.8, y - 15, 3.6, 15);
+    ctx.fillStyle = 'rgba(255,220,170,.35)'; ctx.fillRect(x - 1.8, y - 15, 1.2, 15);
+    ctx.fillStyle = cap; ctx.beginPath(); ctx.ellipse(x, y - 15, 1.9, 0.9, 0, 0, 7); ctx.fill();
   }
 }
 

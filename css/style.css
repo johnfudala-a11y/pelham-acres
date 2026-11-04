@@ -33,10 +33,16 @@ canvas#game { position: fixed; inset: 0; touch-action: none; display: block; }
 .pill { background: var(--parchbg); border: 2.5px solid var(--wood); border-radius: 999px; padding: 5px 14px 5px 10px;
   font-weight: 800; font-size: 17px; box-shadow: 0 3px 0 var(--wood-d), 0 4px 8px rgba(0,0,0,.18); display: flex; align-items: center; gap: 6px; }
 .pill .ui { height: 24px; vertical-align: middle; }
-.pill.lvl b { background: radial-gradient(circle at 35% 30%, #7FB0EA, #3F73BE); color: #fff; border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center;
-  margin-left: -6px; font-size: 15px; border: 2px solid var(--wood); text-shadow: 0 1px 0 rgba(0,0,0,.3); }
-.xpbar { width: 90px; height: 10px; background: #E6D2A8; border-radius: 6px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.2); }
-#xpfill { height: 100%; background: linear-gradient(180deg, #7FB0EA, #4A80CC); width: 0; transition: width .3s; }
+/* level: number stamped on a painted gold medal that overhangs the pill */
+.pill.lvl { padding-left: 34px; position: relative; }
+.pill.lvl b { position: absolute; left: -8px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: grid; place-items: center;
+  background: url(../sprites/icon-medal.webp) center / contain no-repeat; color: #6A4108; font-size: 16px; font-family: var(--serif); font-weight: 900;
+  text-shadow: 0 1px 0 rgba(255,240,190,.9); filter: drop-shadow(0 2px 1px rgba(60,30,0,.35)); padding-bottom: 2px; }
+.xpbar { width: 90px; height: 11px; background: #E6D2A8; border-radius: 6px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.25); border: 1px solid rgba(94,58,27,.35); }
+#xpfill { height: 100%; background: linear-gradient(180deg, #FFE08A, #E3A12A 60%, #C9861A); width: 0; transition: width .3s; }
+#seasonPill .ui { height: 24px; }
+#soundBtn .ui { height: 28px; }
+#hint .ui { height: 22px; }
 .pill small { font-size: 12px; color: var(--muted); font-weight: 700; }
 #hint { position: fixed; bottom: calc(env(safe-area-inset-bottom) + 100px); left: 50%; transform: translateX(-50%); z-index: 5; max-width: min(560px, calc(100vw - 24px));
   background: var(--parchbg); border: 2.5px solid var(--wood); color: var(--ink); border-radius: 14px; padding: 7px 14px; font-weight: 700; font-size: 14px;
@@ -242,14 +248,29 @@ h3.soon { color: var(--muted); }
 .exp-body { flex: 1; overflow: auto; position: relative; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; padding: 14px; display: flex; justify-content: center; }
 .exp-grid { display: grid; gap: 4px; align-content: start; }
 .tile { width: var(--ts); height: var(--ts); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: calc(var(--ts) * 0.5); position: relative; user-select: none; }
-.tile.rev { background: rgba(255,255,255,.22); }
-.tile.water { background: rgba(80,160,220,.55); }
-.tile.fog { background: rgba(40,50,40,.75); color: rgba(255,255,255,.25); font-size: calc(var(--ts) * 0.35); }
-.tile.can { background: rgba(60,70,55,.6); border: 2px dashed rgba(255,240,200,.75); color: #FFE9A8; font-weight: 800; font-size: calc(var(--ts) * 0.28); cursor: pointer; }
+/* explored squares look like patches of an old paper map; unexplored ones sit under painted fog */
+.tile .ex { width: 84%; height: 84%; object-fit: contain; filter: drop-shadow(0 2px 1px rgba(40,25,10,.3)); }
+.tile.rev { background: radial-gradient(ellipse at 50% 60%, rgba(255,246,220,.55), rgba(240,222,180,.3) 70%); box-shadow: inset 0 0 0 1px rgba(255,240,200,.35); }
+.tile.water { background: radial-gradient(ellipse at 50% 50%, rgba(120,190,230,.7), rgba(60,130,190,.55)); }
+/* unexplored: a soft drifting mist rather than a wall of identical clouds */
+.tile.fog { background: radial-gradient(ellipse at 50% 50%, rgba(205,215,200,.42), rgba(70,85,70,.5) 75%); overflow: hidden; border-radius: 6px; }
+.tile.fog .fogimg { width: 150%; height: 150%; max-width: none; object-fit: contain; opacity: .28; filter: blur(1px); animation: drift 9s ease-in-out infinite alternate; }
+.tile.fog:nth-child(3n) .fogimg { transform: scaleX(-1); animation-duration: 11s; }
+.tile.fog:nth-child(4n+1) .fogimg { opacity: .2; animation-delay: -4s; }
+@keyframes drift { from { translate: -6% 0; } to { translate: 6% -3%; } }
+.exp-grid { gap: 2px; }
+.tile.can { background: rgba(255,244,214,.18); border: 2px dashed rgba(255,240,200,.85); color: #FFE9A8; font-weight: 800; font-size: calc(var(--ts) * 0.26); cursor: pointer;
+  animation: beckon 2.4s ease-in-out infinite; }
+.tile.can .paws { position: absolute; width: 60%; height: 60%; object-fit: contain; opacity: .45; }
+.tile.can .cost { position: relative; background: rgba(60,40,20,.75); border-radius: 8px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 2px; }
+.tile.can .cost .ui { height: 1.1em; }
+@keyframes beckon { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,230,150,0); } 50% { box-shadow: 0 0 10px 2px rgba(255,230,150,.45); } }
+.bigart { text-align: center; }
+.bigimg { height: 96px; width: auto; filter: drop-shadow(0 3px 3px rgba(40,25,10,.3)); }
 .tile.can:active { transform: scale(.95); }
 .tile.pop { animation: pop .45s ease; }
 @keyframes pop { 0% { transform: scale(.6); opacity: .3; } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
-.tile .milo { position: absolute; right: -4px; bottom: -4px; font-size: calc(var(--ts) * 0.32); }
+.tile .milo { position: absolute; right: -6px; bottom: -4px; height: 70%; width: auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
 .exp-foot { background: var(--parchbg); border-radius: 20px 20px 0 0; padding: 10px 14px calc(env(safe-area-inset-bottom) + 10px); max-height: 32vh; overflow: auto;
   border-top: 4px solid var(--wood); }
 .exp-foot .row { gap: 6px; }
@@ -291,6 +312,8 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
   .tb span { font-size: 10.5px; }
   .pill { font-size: 15px; padding: 4px 10px 4px 8px; }
   .pill .ui { height: 20px; }
+  .pill.lvl { padding-left: 30px; }
+  .pill.lvl b { width: 38px; height: 38px; font-size: 14px; }
   .xpbar { width: 60px; }
   #modebar { bottom: calc(env(safe-area-inset-bottom) + 84px); }
   .grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }

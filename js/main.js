@@ -5,7 +5,7 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.16';
+export const APP_VERSION = '0.17';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
 
@@ -135,7 +135,7 @@ function refreshHud() {
   $('#storePill').classList.toggle('full', used >= cap);
   const r = G.readyOrders(); const b = $('#ordBadge'); b.hidden = !r; b.textContent = r;
   const se = G.season();
-  $('#seasonPill').innerHTML = `${se.icon} ${se.name} <small>${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</small>`;
+  $('#seasonPill').innerHTML = `${ui(se.name.toLowerCase(), se.icon)} ${se.name} <small>${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</small>`;
 }
 
 // ---------- mode bar (planting / placing) ----------
@@ -580,12 +580,16 @@ function scrollToFrontier() {
   if (el) { const body = $('#expBody'); body.scrollTop = Math.max(0, el.offsetTop - body.clientHeight / 2); }
 }
 function closeExpedition() { $('#exp').hidden = true; sfx.close(); G.save(); refreshHud(); }
+// painted expedition art: one picture per kind of square, plus region badges
+const exArt = (n, fb, cls = 'ex') => IMG(`sprites/ex-${n}.webp`, fb, cls);
+const REGION_ART = { woods: 'pine', hills: 'hills', lake: 'lantern' };
+const regionArt = (r, cls) => exArt(REGION_ART[r.id] || 'pine', r.icon, cls);
 function renderExp() {
   const reg = X.REGIONS.find(r => r.id === expRegion), L = X.layout(reg);
   $('#exp').style.background = reg.bg;
   $('#expTabs').innerHTML = X.REGIONS.map(r => {
     const un = X.regionUnlocked(r);
-    return `<button class="tab ${r.id === expRegion ? 'on' : ''} ${un ? '' : 'lock'}" data-reg="${r.id}">${r.icon} ${r.name}${un ? (X.regionState(r).done ? ' ✅' : '') : ` 🔒${r.lvl}`}</button>`;
+    return `<button class="tab ${r.id === expRegion ? 'on' : ''} ${un ? '' : 'lock'}" data-reg="${r.id}">${regionArt(r, 'ti')}<span>${r.name}</span>${un ? (X.regionState(r).done ? ' ✔' : '') : `<i class="tcount soft">Lv ${r.lvl}</i>`}</button>`;
   }).join('');
   const body = $('#expBody'), ts = Math.max(40, Math.min(64, Math.floor((body.clientWidth - 28 - (reg.cols - 1) * 4) / reg.cols)));
   const grid = $('#expGrid');
@@ -593,17 +597,18 @@ function renderExp() {
   grid.style.gridTemplateColumns = `repeat(${reg.cols}, ${ts}px)`;
   grid.innerHTML = L.tiles.map((t, i) => {
     const T = X.TILE[t];
-    if (X.isRevealed(reg, i)) return `<div class="tile rev ${t === 'water' ? 'water' : ''}" data-i="${i}">${t === 'ruin' ? '🏡' : T.icon}${t === 'camp' ? '<span class="milo">🐈</span>' : ''}</div>`;
-    if (X.canExplore(reg, i)) return `<div class="tile can" data-i="${i}">⚡${T.cost}</div>`;
-    return `<div class="tile fog" data-i="${i}">☁️</div>`;
+    if (X.isRevealed(reg, i)) return `<div class="tile rev ${t === 'water' ? 'water' : ''} t-${t}" data-i="${i}">${exArt(t, T.icon)}${t === 'camp' ? IMG('sprites/milo-sit.webp', '🐈', 'milo') : ''}</div>`;
+    if (X.canExplore(reg, i)) return `<div class="tile can" data-i="${i}">${exArt('paws', '', 'paws')}<span class="cost">⚡${T.cost}</span></div>`;
+    return `<div class="tile fog" data-i="${i}">${exArt('fog', '☁️', 'fogimg')}</div>`;
   }).join('');
+  grid.innerHTML = paint(grid.innerHTML);
   updateEnergy();
   renderExpFoot(reg);
 }
 function renderExpFoot(reg) {
   const p = X.progress(reg), st = X.regionState(reg);
   const foods = Object.keys(X.FOOD).filter(k => G.have(k) > 0);
-  $('#expFoot').innerHTML = paint(`<div class="row"><b>${reg.icon} ${reg.name}</b><span class="sub" style="margin:0">· explored ${p.have}/${p.total}</span><span class="spacer"></span>
+  $('#expFoot').innerHTML = paint(`<div class="row"><b>${regionArt(reg, 'ai')} ${reg.name}</b><span class="sub" style="margin:0">· explored ${p.have}/${p.total}</span><span class="spacer"></span>
       <span class="sub" style="margin:0">${st.done ? 'Fully explored ✅' : `Explore it all: 🪙 ${fmtN(reg.reward.coins)} · ⏳ ${reg.reward.hg} · ${Object.entries(reg.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}`}</span></div>
     <div class="row" style="margin-top:8px"><b>🧺 Picnic basket</b><span class="sub" style="margin:0">Eat food you've made for energy</span></div>
     <div class="row" style="margin-top:6px">${foods.length ? foods.map(k => `<span class="food">${ic(k)} ${G.have(k)} <button class="btn sm" data-eat="${k}">+${X.FOOD[k]}⚡</button></span>`).join('') : '<span class="sub" style="margin:0">Bake bread or make other foods to pack a picnic.</span>'}</div>`);
@@ -642,11 +647,11 @@ $('#expGrid').addEventListener('click', e => {
   G.save();
   renderExp();
   const nt = $(`#expGrid .tile[data-i="${i}"]`); if (nt) nt.classList.add('pop');
-  if (r.story) modal(`<div class="portrait">🏚️</div><h2>${r.story.name}</h2><div class="say">${r.story.text}</div>
+  if (r.story) modal(`<div class="bigart">${exArt('ruin', '🏚️', 'bigimg')}</div><h2>${r.story.name}</h2><div class="say">${r.story.text}</div>
       <p><b>${Object.entries(r.story.items).map(([k, v]) => `${ic(k)} ${v} ${nm(k)}`).join(' · ')}</b></p><p class="sub">New blueprint! Find it in the Shop under Decor.</p>
       <button class="btn wide" data-act="closeModal">Amazing!</button>`);
-  if (r.finished) setTimeout(() => { sfx.levelUp(); modal(`<div class="portrait">${r.finished.icon}</div><h2>${r.finished.name} explored!</h2>
-      <p>Milo is very proud of himself. 🐈</p><p><b>🪙 ${fmtN(r.finished.reward.coins)} · ⏳ ${r.finished.reward.hg} · ${Object.entries(r.finished.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}</b></p>
+  if (r.finished) setTimeout(() => { sfx.levelUp(); modal(`<div class="bigart">${regionArt(r.finished, 'bigimg')}</div><h2>${r.finished.name} explored!</h2>
+      <p>Milo is very proud of himself. ${IMG('sprites/milo-sit.webp', '🐈', 'ai')}</p><p><b>🪙 ${fmtN(r.finished.reward.coins)} · ⏳ ${r.finished.reward.hg} · ${Object.entries(r.finished.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}</b></p>
       <button class="btn wide" data-act="closeModal">Hooray!</button>`); }, r.story ? 0 : 300);
 });
 
@@ -824,7 +829,7 @@ function applyGuide() {
   view.guide = g && (g.obj || g.walker) ? g : null;
   const h = $('#hint');
   if (!g || view.ghost || view.plantCrop) { h.hidden = true; }
-  else { h.hidden = false; h.textContent = `💡 ${g.text}`; }
+  else { h.hidden = false; h.innerHTML = ui('bulb', '💡') + ' '; h.append(g.text); }
   document.querySelectorAll('.tb').forEach(b => b.classList.toggle('pulse', !!g && g.tb === b.dataset.tb));
 }
 $('#hint').addEventListener('click', () => { sfx.tap(); openSheet('Quests', questsSheet); $('#sheetTitle').dataset.k = 'quests'; });
@@ -837,9 +842,9 @@ function masteryList() {
     rows.map(([kind, id]) => `<div class="invrow"><span class="ic">${ic(id)}</span><div><div class="n">${nm(id)}</div><div class="nm">${starStr(kind, id)} ${masteryLine(kind, id)}</div></div></div>`).join('') + '</div>';
 }
 function exploreSheet() {
-  if (G.S.level < 5 && !Q.hasFlag('expedition')) return `<div style="font-size:48px;text-align:center">🌲</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
+  if (G.S.level < 5 && !Q.hasFlag('expedition')) return `<div class="bigart">${exArt('pine', '🌲', 'bigimg')}</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
     <p class="sub">Exploring unlocks around level 5. Keep an eye on Milo...</p>`;
-  if (!Q.hasFlag('expedition')) return `<div style="font-size:48px;text-align:center">🌲</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
+  if (!Q.hasFlag('expedition')) return `<div class="bigart">${exArt('pine', '🌲', 'bigimg')}</div><p>The woods beyond the farm are thick and wild, and nobody in town has a map.</p>
     <p class="sub">Grandma Ellis says Milo keeps disappearing past the tree line. Maybe he knows something. (Unlocks through the quest "Where Does Milo Go?")</p>`;
   return `<div style="font-size:48px;text-align:center">🗺️</div><p>Beyond the tree line lie the hills and hollows around Pelham Acres.
     The expedition map — with fog to uncover, rare materials, and hidden treasures — arrives in the next update.</p>
@@ -972,7 +977,7 @@ afterLoad();
 initAudio(G.S.settings);
 function refreshSoundBtn() {
   const st = G.S.settings, on = (st.music || st.sfx);
-  const b = $('#soundBtn'); b.textContent = on ? '🔊' : '🔇'; b.classList.toggle('off', !on);
+  const b = $('#soundBtn'); b.innerHTML = on ? ui('sound', '🔊') : ui('mute', '🔇'); b.classList.toggle('off', !on);
 }
 $('#soundBtn').addEventListener('click', () => {
   const st = G.S.settings, on = !(st.music || st.sfx);
