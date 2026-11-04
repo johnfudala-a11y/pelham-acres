@@ -57,6 +57,10 @@ export function rebuildGrid() {
   }
 }
 export const objAt = (x, y) => (x < 0 || y < 0 || x >= MAP || y >= MAP) ? null : grid[y * MAP + x];
+// Buildings keep a one-square gap from other buildings so their pictures never crowd each other.
+// (Fields, paths, decorations and trees may sit right next to anything.)
+const BIG = new Set(['storage', 'producer', 'pen', 'house', 'civic', 'station']);
+export const isBig = t => BIG.has(BUILD[t].kind) || ['gazebo', 'fountain', 'windmill', 'pond'].includes(t);
 export function canPlace(t, x, y, ignore) {
   const b = BUILD[t];
   if (x < 0 || y < 0 || x + b.w > MAP || y + b.h > MAP) return false;
@@ -64,7 +68,20 @@ export function canPlace(t, x, y, ignore) {
     const o = grid[(y + j) * MAP + x + i];
     if (o && o !== ignore) return false;
   }
+  if (isBig(t)) {
+    for (let i = -1; i <= b.w; i++) for (let j = -1; j <= b.h; j++) {
+      const o = objAt(x + i, y + j);
+      if (o && o !== ignore && isBig(o.t)) return false;
+    }
+  }
   return true;
+}
+// Why can't this go here? (for a helpful message)
+export function placeProblem(t, x, y, ignore) {
+  const b = BUILD[t];
+  if (x < 0 || y < 0 || x + b.w > MAP || y + b.h > MAP) return 'edge';
+  for (let i = 0; i < b.w; i++) for (let j = 0; j < b.h; j++) { const o = grid[(y + j) * MAP + x + i]; if (o && o !== ignore) return 'blocked'; }
+  return canPlace(t, x, y, ignore) ? null : 'crowded';
 }
 function initFor(t) {
   switch (BUILD[t].kind) {

@@ -5,7 +5,7 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.10';
+export const APP_VERSION = '0.11';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
@@ -152,7 +152,12 @@ function nearestFree(t, x0, y0) {
 function updateGhost() { const g = view.ghost; if (g) g.ok = G.canPlace(g.t, g.x, g.y, g.move); }
 function confirmPlace() {
   const g = view.ghost; if (!g) return;
-  if (!g.ok) { sfx.error(); toast("Can't place there — something's in the way"); return; }
+  if (!g.ok) {
+    sfx.error();
+    const why = G.placeProblem(g.t, g.x, g.y, g.move);
+    toast(why === 'crowded' ? 'Too close to another building. Leave one square of space between buildings.' : why === 'edge' ? "That's off the edge of your land" : "Can't place there. Something's in the way.");
+    return;
+  }
   if (g.move) { sfx.build(); G.moveObj(g.move, g.x, g.y); cancelPlace(); return; }
   const block = G.buyBlock(g.t);
   if (block) { sfx.error(); toast(block); return; }

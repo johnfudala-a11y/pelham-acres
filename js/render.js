@@ -2,6 +2,7 @@
 // later each type can be swapped for an AI-generated sprite via SPRITES.
 import { TW, TH, MAP, BUILD, CROPS, ITEMS } from './data.js';
 import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState } from './game.js';
+import { setNavGrid, planTo, wander, stepWalker, isWalking, unstick } from './nav.js';
 
 export const cam = { x: 0, y: 0, z: 1 };
 export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
@@ -9,11 +10,12 @@ export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
 // k = width as a fraction of the footprint's diamond width; dy = nudge of the bottom edge.
 export const SPRITES = {};
 const SPRITE_CFG = {
-  barn: { k: 1.1 }, feedMill: { k: 1.1 }, bakery: { k: 1.0 }, workshop: { k: 1.1 }, dairy: { k: 1.1 }, sugarMill: { k: 1.12 },
-  kitchen: { k: 1.12 }, loom: { k: 1.1 }, cafe: { k: 1.0 },
-  cottage: { k: 1.05 }, farmhouse: { k: 1.15 }, townhouse: { k: 0.75 }, manor: { k: 1.12 },
-  townHall: { k: 1.1 }, generalStore: { k: 1.12 }, schoolhouse: { k: 1.05 }, clockTower: { k: 0.46 }, bandstand: { k: 1.0 }, station: { k: 1.08 },
-  flowers: { k: 1.0 }, hedge: { k: 0.9 }, bench: { k: 0.95 }, lamp: { k: 0.42 }, pond: { k: 1.05 }, gazebo: { k: 1.0 }, fountain: { k: 1.0 }, windmill: { k: 1.05 },
+  // every picture fits inside its own ground space (k <= 1), so neighbours never overlap side-to-side
+  barn: { k: 0.97 }, feedMill: { k: 0.97 }, bakery: { k: 0.9 }, workshop: { k: 0.97 }, dairy: { k: 0.97 }, sugarMill: { k: 0.97 },
+  kitchen: { k: 0.97 }, loom: { k: 0.97 }, cafe: { k: 0.9 },
+  cottage: { k: 0.93 }, farmhouse: { k: 0.97 }, townhouse: { k: 0.7 }, manor: { k: 0.97 },
+  townHall: { k: 0.97 }, generalStore: { k: 0.97 }, schoolhouse: { k: 0.97 }, clockTower: { k: 0.44 }, bandstand: { k: 0.93 }, station: { k: 0.97 },
+  flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 0.93 }, fountain: { k: 0.93 }, windmill: { k: 0.97 },
 };
 const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
   'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
@@ -198,7 +200,7 @@ function drawTree(o, t) {
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
   const v = hash(o.id), s = 0.85 + v * 0.35, sway = Math.sin(t / 900 + o.id) * 1.2;
   const tim = spr('tree-' + season().name.toLowerCase());
-  if (tim) { drawSprite(tim, cx + sway * 0.5, cy + 10, 70 * s * (season().name === 'Winter' ? 0.8 : 1), v > 0.5); return; }
+  if (tim) { drawSprite(tim, cx + sway * 0.5, cy + 10, 62 * (0.9 + v * 0.2) * (season().name === 'Winter' ? 0.8 : 1), v > 0.5); return; }
   ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(cx + 4, cy + 2, 16 * s, 7 * s, 0, 0, 7); ctx.fill();
   ctx.fillStyle = '#6D4C30'; ctx.fillRect(cx - 3, cy - 18 * s, 6, 18 * s);
   const se = season(), si = SEASONS_IDX(se);
@@ -523,50 +525,36 @@ function drawGhostFootprint(g) {
 // ---------- house cats: Ollie & Milo ----------
 // Ollie: fat orange tabby, slow, loves naps. Milo: skinny, hyper, mostly white with orange patches.
 export const cats = [
-  { id: 'ollie', name: 'Ollie', x: 13.5, y: 12.5, tx: 13.5, ty: 12.5, speed: 0.35, range: 3, pause: 0, nap: false, face: 1, fat: true, zoomUntil: 0 },
-  { id: 'milo',  name: 'Milo',  x: 16.5, y: 13.5, tx: 16.5, ty: 13.5, speed: 2.2,  range: 7, pause: 0, nap: false, face: -1, fat: false, zoomUntil: 0 },
+  { id: 'ollie', name: 'Ollie', cat: true, x: 13.5, y: 12.5, path: null, speed: 0.35, range: 3, pause: 0, nap: false, face: 1, fat: true, zoomUntil: 0 },
+  { id: 'milo',  name: 'Milo',  cat: true, x: 16.5, y: 13.5, path: null, speed: 2.2,  range: 7, pause: 0, nap: false, face: -1, fat: false, zoomUntil: 0 },
 ];
 let lastCatT = 0;
-function catSpotOk(x, y) {
-  if (x < 8 || y < 8 || x > 22 || y > 22) return false; // stay around the farmyard
-  const o = objAtTile(Math.floor(x), Math.floor(y));
-  return !o || o.t === 'field' || o.t === 'path';
-}
-let objAtTile = () => null;
 let catFavorite = () => null; // optional: returns a favorite spot {x,y} for a cat
-export function setCatGrid(fn, fav) { objAtTile = fn; if (fav) catFavorite = fav; }
+export function setCatGrid(fn, fav) { setNavGrid(fn); if (fav) catFavorite = fav; }
 export function catGo(c, far) {
   const fav = !far && catFavorite(c);
-  if (fav && Math.random() < 0.7) { c.tx = fav.x; c.ty = fav.y; return; }
-  const r = far ? c.range * 1.6 : c.range;
-  for (let i = 0; i < 25; i++) {
-    const x = c.x + (Math.random() * 2 - 1) * r, y = c.y + (Math.random() * 2 - 1) * r;
-    if (catSpotOk(x, y)) { c.tx = x; c.ty = y; return; }
-  }
-  // stuck somewhere odd: head back toward the barnyard
-  c.tx = 14 + Math.random() * 3; c.ty = 12 + Math.random() * 3;
+  if (fav && Math.random() < 0.7 && planTo(c, Math.floor(fav.x), Math.floor(fav.y), true)) return;
+  if (wander(c, c.x, c.y, far ? c.range * 1.6 : c.range)) return;
+  // nowhere nearby to go: head back toward the barnyard
+  wander(c, 15, 13, 3);
 }
 function updateCats(pt) {
   const dt = lastCatT ? Math.min(0.1, (pt - lastCatT) / 1000) : 0; lastCatT = pt;
   for (const c of cats) {
+    unstick(c);
     if (pt < c.pause) continue;
-    const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
-    if (d < 0.05) {
-      if (c.fat) { c.nap = Math.random() < 0.55; c.pause = pt + (c.nap ? 9000 + Math.random() * 14000 : 2500 + Math.random() * 5000); }
-      else { c.nap = false; c.pause = pt + (pt < c.zoomUntil ? 80 : 400 + Math.random() * 2200); }
-      catGo(c, pt < c.zoomUntil);
-      continue;
-    }
-    c.nap = false;
-    const sp = c.speed * (pt < c.zoomUntil ? 2.2 : 1);
-    const st = Math.min(d, sp * dt);
-    c.x += dx / d * st; c.y += dy / d * st;
-    if (Math.abs(dx - dy) > 0.01) c.face = dx - dy > 0 ? 1 : -1;
+    const st = stepWalker(c, dt, c.speed * (pt < c.zoomUntil ? 2.2 : 1));
+    if (st === 'moving') { c.nap = false; continue; }
+    if (st === 'blocked') { catGo(c, pt < c.zoomUntil); continue; }
+    // arrived: rest a while (Ollie often naps), then pick somewhere new
+    if (c.fat) { c.nap = Math.random() < 0.55; c.pause = pt + (c.nap ? 9000 + Math.random() * 14000 : 2500 + Math.random() * 5000); }
+    else { c.nap = false; c.pause = pt + (pt < c.zoomUntil ? 80 : 400 + Math.random() * 2200); }
+    catGo(c, pt < c.zoomUntil);
   }
 }
 function drawCat(c, pt) {
   const [px, py] = P(c.x, c.y);
-  const moving = pt >= c.pause && Math.hypot(c.tx - c.x, c.ty - c.y) > 0.05;
+  const moving = isWalking(c, pt);
   const cim = spr(c.fat ? (c.nap ? 'ollie-sleep' : 'ollie') : 'milo');
   if (cim) {
     const lift = c.fat ? (moving ? Math.abs(Math.sin(pt / 160)) * 1.5 : 0) : (moving ? Math.abs(Math.sin(pt / 70)) * 4 : 0);
@@ -649,32 +637,31 @@ export function setPeople(defs) {
   for (const id in defs) {
     if (people.some(p => p.id === id)) continue;
     const d = defs[id], [hx, hy] = d.home;
-    people.push({ id, person: true, def: d, home: [hx + 0.5, hy + 0.5], x: hx + 0.5, y: hy + 0.5, tx: hx + 0.5, ty: hy + 0.5, speed: 0.55, pause: 0, face: 1, visible: false, badge: null });
+    people.push({ id, person: true, def: d, home: [hx + 0.5, hy + 0.5], x: hx + 0.5, y: hy + 0.5, path: null, speed: 0.55, pause: 0, face: 1, visible: false, badge: null });
   }
 }
 function personGo(p) {
-  for (let i = 0; i < 20; i++) {
-    const x = p.home[0] + (Math.random() * 2 - 1) * 4, y = p.home[1] + (Math.random() * 2 - 1) * 4;
-    if (catSpotOk(x, y)) { p.tx = x; p.ty = y; return; }
-  }
-  p.tx = 14.5 + Math.random() * 2; p.ty = 12.5 + Math.random() * 2;
+  if (wander(p, p.home[0], p.home[1], 4)) return;
+  if (wander(p, p.x, p.y, 6)) return;
+  wander(p, 15, 13, 4);
 }
 function updatePeople(pt) {
   const dt = lastPeopleT ? Math.min(0.1, (pt - lastPeopleT) / 1000) : 0; lastPeopleT = pt;
   for (const p of people) {
     if (!p.visible) continue;
+    unstick(p);
     if (pt < p.pause) { if (Math.random() < 0.003) p.face = -p.face; continue; } // glance around while standing
-    const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy);
-    if (d < 0.05) { p.pause = pt + 2000 + Math.random() * 6000; personGo(p); continue; }
-    const st = Math.min(d, p.speed * dt);
-    p.x += dx / d * st; p.y += dy / d * st;
-    if (Math.abs(dx - dy) > 0.01) p.face = dx - dy > 0 ? 1 : -1;
+    const st = stepWalker(p, dt, p.speed);
+    if (st === 'moving') continue;
+    if (st === 'blocked') { personGo(p); continue; }
+    p.pause = pt + 2000 + Math.random() * 6000;
+    personGo(p);
   }
 }
 let lastPeopleT = 0;
 function drawPerson(p, pt) {
   const [px, py] = P(p.x, p.y), d = p.def;
-  const moving = pt >= p.pause && Math.hypot(p.tx - p.x, p.ty - p.y) > 0.05;
+  const moving = isWalking(p, pt);
   const step = moving ? Math.sin(pt / 140) * 2.5 : 0;
   const pim = spr('p-' + p.id);
   if (pim) {
