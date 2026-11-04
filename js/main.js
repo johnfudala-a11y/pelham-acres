@@ -5,13 +5,15 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.9';
+export const APP_VERSION = '0.10';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople } from './render.js';
 
 const $ = s => document.querySelector(s);
 const now = G.now;
 const ic = id => ITEMS[id]?.icon || '❔';
+// painted crop picture for menus (falls back to the emoji if the image can't load)
+const icH = id => CROPS[id] ? `<img class="cimg" src="sprites/crop-${id}.webp" alt="${CROPS[id].name}" onerror="this.outerHTML='${CROPS[id].icon}'">` : ic(id);
 const nm = id => ITEMS[id]?.name || id;
 function fmtT(ms) {
   let s = Math.max(0, Math.ceil(ms / 1000));
@@ -86,7 +88,7 @@ function liveUpdate() {
   });
   if (rerender) renderSheet();
 }
-const req = (id, n) => `<span class="req ${G.have(id) >= n ? 'ok' : 'no'}">${ic(id)} ${G.have(id)}/${n}</span>`;
+const req = (id, n) => `<span class="req ${G.have(id) >= n ? 'ok' : 'no'}">${icH(id)} ${G.have(id)}/${n}</span>`;
 const reqs = r => Object.entries(r).map(([k, v]) => req(k, v)).join(' ');
 
 // ---------- HUD ----------
@@ -341,7 +343,7 @@ function cropPicker() {
   return `<p class="sub">Pick a crop, then tap or drag across empty fields to plant it. ${se.icon} ${se.name} crops grow 25% faster and pay more in orders.</p><div class="grid">` +
     Object.entries(CROPS).map(([k, c]) => {
       const locked = G.S.level < c.lvl;
-      return `<div class="card ${locked ? 'locked' : ''}"><div class="big">${c.icon}</div><div class="nm">${c.name}${G.inSeason(k) ? ` <span title="In season">${se.icon}</span>` : ''}</div>
+      return `<div class="card ${locked ? 'locked' : ''}"><div class="big">${icH(k)}</div><div class="nm">${c.name}${G.inSeason(k) ? ` <span title="In season">${se.icon}</span>` : ''}</div>
         ${locked ? '' : starStr('crop', k)}
         <div class="meta">⏱ ${secs(Math.round(G.cropTime(k)))} · 🪙 ${c.cost} · ×${CROP_YIELD}</div>
         ${locked ? `<div class="meta">🔒 Level ${c.lvl}</div>` : `<button class="btn sm" data-act="pickCrop" data-c="${k}">Plant</button>`}</div>`;
@@ -429,7 +431,7 @@ function barnSheet() {
     <h3>Upgrade barn (+30)</h3><div class="row"><span class="req ${G.S.coins >= up.coins ? 'ok' : 'no'}">🪙 ${up.coins}</span>${req('wood', up.wood)}${req('stone', up.stone)}
     <button class="btn sm" data-act="upgradeBarn">Upgrade</button></div><h3>Your goods</h3>`;
   if (!items.length) return html + '<p class="sub">Empty. Harvest some crops!</p>';
-  html += '<div class="inv">' + items.map(([id, n]) => `<div class="invrow"><span class="ic">${ic(id)}</span><div><div class="n">${n}</div><div class="nm">${nm(id)}</div></div><span class="spacer"></span>
+  html += '<div class="inv">' + items.map(([id, n]) => `<div class="invrow"><span class="ic">${icH(id)}</span><div><div class="n">${n}</div><div class="nm">${nm(id)}</div></div><span class="spacer"></span>
     <button class="btn sm alt" data-act="sell" data-id="${id}" data-n="1">Sell ${G.sellPrice(id)}🪙</button></div>`).join('') + '</div>';
   return html;
 }

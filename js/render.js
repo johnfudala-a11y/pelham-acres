@@ -16,7 +16,8 @@ const SPRITE_CFG = {
   flowers: { k: 1.0 }, hedge: { k: 0.9 }, bench: { k: 0.95 }, lamp: { k: 0.42 }, pond: { k: 1.05 }, gazebo: { k: 1.0 }, fountain: { k: 1.0 }, windmill: { k: 1.05 },
 };
 const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
-  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis'];
+  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
+  'soil', 'sprout', 'growing', ...Object.keys(CROPS).map(c => 'crop-' + c)];
 export function loadSprites() {
   const load = (n, tries) => {
     const im = new Image();
@@ -109,10 +110,12 @@ function heightOf(o) {
   if (b.kind === 'obstacle') return o.t === 'tree' ? (spr('tree-summer') ? 68 : 52) : (spr('rock') ? 32 : 22);
   if (b.kind === 'pen') return 36;
   if (b.kind === 'decor') return o.t === 'lamp' ? 40 : o.t === 'windmill' ? 100 : o.t === 'gazebo' ? 50 : o.t === 'fountain' ? 36 : 18;
-  if (b.kind === 'field' || b.kind === 'path') return 0;
+  if (b.kind === 'field') return o.crop ? 30 : 0;
+  if (b.kind === 'path') return 0;
   return (b.hgt || 30) + 18 + (b.w + b.h) * 3;
 }
-const isFlat = o => { const k = BUILD[o.t].kind; return k === 'field' || k === 'path'; };
+// fields join the depth-sorted pass once crops are painted (ripe crops stand up off the ground)
+const isFlat = o => { const k = BUILD[o.t].kind; return k === 'path' || (k === 'field' && !spr('soil')); };
 
 // ---------- drawing primitives per kind ----------
 function drawBox(x, y, w, h, hgt, wall, roof, roofH, icon) {
@@ -146,6 +149,22 @@ function drawBox(x, y, w, h, hgt, wall, roof, roofH, icon) {
 }
 
 function drawField(o, t) {
+  const soil = spr('soil');
+  if (soil) {
+    const [cx, cy] = P(o.x + 0.5, o.y + 0.5), by = P(o.x + 1, o.y + 1)[1];
+    drawSprite(soil, cx, by + 3, TW * 1.02, false, true);
+    if (!o.crop) return;
+    const p = Math.min(1, (t - o.start) / Math.max(1, o.end - o.start));
+    const ripe = p >= 1 && spr('crop-' + o.crop);
+    if (ripe) {
+      const sway = Math.sin(t / 700 + o.id) * 0.8;
+      drawSprite(ripe, cx + sway, cy + 15, 57, (o.id & 1) === 1, true);
+      if (((t / 900 + o.id) % 3) < 0.25) { ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(cx + 14, cy - 26, 2.2, 0, 7); ctx.fill(); }
+      return;
+    }
+    const stage = spr(p < 0.4 ? 'sprout' : 'growing');
+    if (stage) { const w = p < 0.4 ? 30 + p * 20 : 34 + p * 12; drawSprite(stage, cx, cy + 11, w, (o.id & 1) === 1, true); return; }
+  }
   const pts = diamond(o.x, o.y, 1, 1, 2);
   poly(pts, '#8A5A2E', 'rgba(60,35,15,.4)');
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
@@ -247,7 +266,13 @@ function drawPen(o, b, t) {
   }).sort((p, q) => (p.fx + p.fy) - (q.fx + q.fy)).forEach(({ an, i, fx, fy, flip }) => {
     const [sx, sy] = P(o.x + fx * b.w, o.y + fy * b.h);
     const st = animalState(an), bob = st === 'busy' ? Math.sin(t / 250 + i) : 0;
-    if (aim) drawSprite(aim, sx, sy + 2 + bob, aw, flip);
+    if (aim) {
+      // gentle waddle so farm animals don't slide around
+      const wd = Math.sin(t / 220 + i * 1.7);
+      ctx.fillStyle = 'rgba(30,40,10,0.2)'; ctx.beginPath(); ctx.ellipse(sx, sy + 1, aw * 0.4, aw * 0.13, 0, 0, 7); ctx.fill();
+      ctx.save(); ctx.translate(sx, sy + 2 + bob - Math.abs(wd) * 1.5); ctx.rotate(wd * 0.06); ctx.scale(flip ? -1 : 1, 1);
+      const ah = aw * aim.naturalHeight / aim.naturalWidth; ctx.drawImage(aim, -aw / 2, -ah, aw, ah); ctx.restore();
+    }
     else emoji(a.icon, sx, sy - 8 + bob, 17);
     if (st === 'ready') emoji(ITEMS[a.product].icon, sx + 9, sy - (aim ? aw * 0.9 : 20), 10);
   });
@@ -637,7 +662,8 @@ function personGo(p) {
 function updatePeople(pt) {
   const dt = lastPeopleT ? Math.min(0.1, (pt - lastPeopleT) / 1000) : 0; lastPeopleT = pt;
   for (const p of people) {
-    if (!p.visible || pt < p.pause) continue;
+    if (!p.visible) continue;
+    if (pt < p.pause) { if (Math.random() < 0.003) p.face = -p.face; continue; } // glance around while standing
     const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy);
     if (d < 0.05) { p.pause = pt + 2000 + Math.random() * 6000; personGo(p); continue; }
     const st = Math.min(d, p.speed * dt);
@@ -652,8 +678,22 @@ function drawPerson(p, pt) {
   const step = moving ? Math.sin(pt / 140) * 2.5 : 0;
   const pim = spr('p-' + p.id);
   if (pim) {
+    // walk cycle: bounce on each step, rock side to side, squash a little on landing;
+    // when standing still, breathe gently instead
     const h = 50, w = h * pim.naturalWidth / pim.naturalHeight;
-    drawSprite(pim, px, py + 4 - (moving ? Math.abs(step) * 0.4 : 0), w, p.face < 0);
+    const ph = pt / 165 + p.home[0] * 3.1;
+    const sw = Math.sin(ph), stepUp = moving ? Math.abs(sw) : 0;
+    const bounce = stepUp * 4;
+    const tilt = moving ? sw * 0.09 : Math.sin(pt / 1400 + p.home[1]) * 0.015;
+    const squash = moving ? (1 - stepUp) * 0.05 : Math.sin(pt / 800 + p.home[0]) * 0.012;
+    ctx.fillStyle = 'rgba(30,40,10,0.22)';
+    ctx.beginPath(); ctx.ellipse(px, py + 3, w * 0.42 * (1 - stepUp * 0.15), w * 0.14, 0, 0, 7); ctx.fill();
+    ctx.save();
+    ctx.translate(px, py + 4 - bounce);
+    ctx.rotate(tilt);
+    ctx.scale((p.face < 0 ? -1 : 1) * (1 + squash * 0.6), 1 - squash);
+    ctx.drawImage(pim, -w / 2, -h, w, h);
+    ctx.restore();
     drawBadge(p, px, py, pt);
     return;
   }
