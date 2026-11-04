@@ -1,7 +1,8 @@
 // Pelham Acres — input, menus, and the game loop.
 import { BUILD, CROPS, ITEMS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP } from './data.js';
 import * as G from './game.js';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js';
+import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
+export const APP_VERSION = '0.3';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -199,7 +200,7 @@ function act(el) {
     case 'toggle':
       G.S.settings[d.k] = !G.S.settings[d.k];
       if (d.k === 'music') setMusic(G.S.settings.music); else setSfx(G.S.settings.sfx);
-      sfx.tap(); break;
+      sfx.tap(); refreshSoundBtn(); break;
   }
   G.save(); refreshHud(); renderSheet();
   setTimeout(showLevelUps, 300);
@@ -401,11 +402,12 @@ function menuSheet() {
     <p class="sub">Town charm: ${G.charm()}. No ads, no purchases — ever. Hourglasses are earned by leveling up and by every 5th delivery.</p>
     <h3>Sound</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="music">Music: ${st.music ? 'On' : 'Off'}</button>
     <button class="btn alt sm" data-act="toggle" data-k="sfx">Sound effects: ${st.sfx ? 'On' : 'Off'}</button></div>
-    <p class="sub">No sound on iPad? Check the volume and that Silent Mode is off.</p>
+    <p class="sub">No sound? Turn the volume up and tap the map once. You can also tap 🔊 in the top corner.</p>
     <h3>Backup</h3><p class="sub">Cloud saves are coming. For now, copy this code to keep a backup, or paste one to restore.</p>
     <textarea id="saveText" placeholder="Save code"></textarea><div class="row" style="margin-top:8px">
     <button class="btn alt sm" data-act="export">Copy save code</button><button class="btn alt sm" data-act="import">Load pasted code</button></div>
-    <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>`;
+    <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
+    <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
 }
 function exploreSheet() {
   return `<div style="font-size:48px;text-align:center">🗺️</div><p>Beyond the tree line lie the hills and hollows around Pelham Acres.
@@ -508,6 +510,17 @@ const loaded = G.load();
 if (!loaded) { G.newGame(); G.save(); }
 afterLoad();
 initAudio(G.S.settings);
+function refreshSoundBtn() {
+  const st = G.S.settings, on = (st.music || st.sfx);
+  const b = $('#soundBtn'); b.textContent = on ? '🔊' : '🔇'; b.classList.toggle('off', !on);
+}
+$('#soundBtn').addEventListener('click', () => {
+  const st = G.S.settings, on = !(st.music || st.sfx);
+  st.music = on; st.sfx = on; setMusic(on); setSfx(on);
+  refreshSoundBtn(); G.save();
+  if (on) { sfx.collect(); toast('Sound on 🎵'); } else toast('Sound off');
+});
+refreshSoundBtn();
 if (!loaded) {
   modal(`<div style="font-size:54px">🌾</div><h2>Welcome to Pelham Acres</h2>
     <p>Grow crops, raise animals, make goods, and turn this little farm into a thriving country town.</p>

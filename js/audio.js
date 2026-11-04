@@ -4,9 +4,32 @@
 let ctx = null, master, sfxBus, musicBus, noiseBuf;
 const state = { music: true, sfx: true, started: false };
 
+// A looping silent <audio> element switches iPhone/iPad into "media playback" mode,
+// so the game is heard even when the phone's ring/silent switch is set to silent.
+let keepAlive = null;
+function silentWavUrl() {
+  const sr = 8000, n = sr / 2, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function startKeepAlive() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback'; // Safari 16.4+
+  } catch (e) {}
+  if (!keepAlive) {
+    keepAlive = document.createElement('audio');
+    keepAlive.src = silentWavUrl(); keepAlive.loop = true; keepAlive.setAttribute('playsinline', ''); keepAlive.volume = 0.01;
+  }
+  const p = keepAlive.play(); if (p && p.catch) p.catch(() => {});
+}
+
 export function initAudio(settings) {
   state.music = settings.music; state.sfx = settings.sfx;
   const unlock = () => {
+    startKeepAlive();
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
@@ -19,15 +42,19 @@ export function initAudio(settings) {
       // iOS: play a silent buffer inside the gesture to fully unlock output
       const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);
     }
-    if (ctx.state !== 'running') ctx.resume();
+    if (ctx.state !== 'running') { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
     if (!state.started) { state.started = true; startMusic(); }
   };
-  for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
+  // Safari only allows audio to start on "activation" events (touchend / click / pointerup), not touchstart.
+  for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
-    if (document.hidden) ctx.suspend(); else ctx.resume();
+    if (document.hidden) { ctx.suspend(); keepAlive && keepAlive.pause(); }
+    // resuming needs a tap on iOS; the unlock listener handles that on the next touch
+    else { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
   });
 }
+export const audioRunning = () => !!ctx && ctx.state === 'running';
 export const audioStatus = () => ({ ctx: ctx ? ctx.state : 'none', time: ctx ? +ctx.currentTime.toFixed(1) : 0, musicBars: bar, music: state.music, sfx: state.sfx });
 export function setMusic(on) { state.music = on; if (musicBus) musicBus.gain.setTargetAtTime(on ? 0.32 : 0, ctx.currentTime, 0.3); }
 export function setSfx(on) { state.sfx = on; if (sfxBus) sfxBus.gain.setTargetAtTime(on ? 0.55 : 0, ctx.currentTime, 0.05); }
@@ -135,6 +162,7 @@ function startMusic() {
 }
 function schedule() {
   if (!ctx || ctx.state !== 'running') return;
+  if (nextBar < ctx.currentTime) nextBar = ctx.currentTime + 0.1; // after a pause, don't burst-play missed bars
   while (nextBar < ctx.currentTime + 1.2) { playBar(nextBar); nextBar += BEAT * 4; bar++; }
 }
 function playBar(t) {
