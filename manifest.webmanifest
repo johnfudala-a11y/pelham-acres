@@ -1,0 +1,16 @@
+{
+  "name": "Pelham Acres",
+  "short_name": "Pelham Acres",
+  "description": "Grow a cozy farm into a thriving country town. No ads, ever.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#5E8C3E",
+  "theme_color": "#5E8C3E",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

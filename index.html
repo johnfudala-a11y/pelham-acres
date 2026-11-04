@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pelham Acres">
+<meta name="theme-color" content="#5E8C3E">
+<title>Pelham Acres</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="pill lvl" id="lvlPill"><b id="lvl">1</b><div class="xpbar"><div id="xpfill"></div></div><small id="xptext"></small></div>
+  <div class="pill">🪙 <span id="coins">0</span></div>
+  <div class="pill">⏳ <span id="hg">0</span></div>
+  <div class="pill" id="storePill">📦 <span id="store">0/50</span></div>
+</div>
+
+<div id="toolbar">
+  <button class="tb" data-tb="shop">🛒<span>Shop</span></button>
+  <button class="tb" data-tb="orders">📋<span>Orders</span><i class="badge" id="ordBadge" hidden></i></button>
+  <button class="tb" data-tb="barn">📦<span>Barn</span></button>
+  <button class="tb" data-tb="explore">🧭<span>Explore</span></button>
+  <button class="tb" data-tb="menu">⚙️<span>Menu</span></button>
+</div>
+
+<div id="modebar" hidden></div>
+
+<div id="sheet" aria-hidden="true">
+  <div class="sheet-head"><h2 id="sheetTitle"></h2><button id="sheetClose" aria-label="Close">✕</button></div>
+  <div class="sheet-body" id="sheetBody"></div>
+</div>
+
+<div id="modal" hidden><div class="modal-card" id="modalCard"></div></div>
+<div id="toast"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
