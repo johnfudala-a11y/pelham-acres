@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.22';
+export const APP_VERSION = '0.23';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen } from './render.js';
 
@@ -255,7 +255,23 @@ $('#hudTip').addEventListener('click', e => {
   if (b.dataset.tip === 'barn') { openSheet('Barn', barnSheet); $('#sheetTitle').dataset.k = 'barn'; }
   else { questTab = 'fair'; openSheet('Quests', questsSheet); $('#sheetTitle').dataset.k = 'quests'; }
 });
-addEventListener('pointerdown', e => { if (!e.target.closest('#hudTip, #hud')) { $('#hudTip').hidden = true; tipFor = null; } }, true);
+// While a description box is open, the next tap anywhere outside it only closes it: the tap is swallowed,
+// so it doesn't also plant, open a building, press a button or switch to another box.
+let swallowTap = false;
+addEventListener('pointerdown', e => {
+  const tip = $('#hudTip');
+  if (tip.hidden || e.target.closest('#hudTip')) return;
+  tip.hidden = true; tipFor = null;
+  swallowTap = true;
+  e.stopPropagation(); e.preventDefault();
+}, true);
+for (const ev of ['pointermove', 'pointerup', 'click']) addEventListener(ev, e => {
+  if (!swallowTap) return;
+  e.stopPropagation(); e.preventDefault();
+  if (ev === 'click') swallowTap = false;
+}, true);
+// (a touch that never produces a click, e.g. a drag, mustn't leave the next real tap swallowed)
+addEventListener('pointerup', () => { if (swallowTap) setTimeout(() => { swallowTap = false; }, 350); }, true);
 
 // ---------- mode bar (planting / placing) ----------
 function setModeBar(html) { const m = $('#modebar'); if (!html) { m.hidden = true; m.innerHTML = ''; return; } m.innerHTML = html; m.hidden = false; }
