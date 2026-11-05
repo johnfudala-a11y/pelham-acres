@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.30';
+export const APP_VERSION = '0.31';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -464,7 +464,11 @@ function act(el) {
       const r = G.clearObstacle(o, d.act === 'clearTool');
       if (r.err) { sfx.error(); toast(r.err === 'tool' ? `No ${nm(G.toolFor(o))}. Make one at the Workshop.` : 'Not enough coins'); break; }
       sfx.clear();
-      floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${em(r.drop.id)}` : '+1 XP');
+      floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}` : '+1 XP', '#fff', r.drop && r.drop.id);
+      if (r.tool) {
+        setTimeout(() => { floater(o.x + 0.5, o.y + 0.2, '+1', '#FFE9A8', r.tool); sfx.collect(); }, 450);
+        toast(`Lucky! You found a spare ${nm(r.tool).toLowerCase()} ${o.t === 'tree' ? 'under the roots' : 'beside the rock'}.`);
+      }
       foundKeepsake(E.rollKeepsake('clear'));
       closeSheet(); break;
     }
@@ -800,10 +804,10 @@ function infoSheet(o) {
 function obstacleSheet(o) {
   const b = BUILD[o.t], c = G.clearCost(o);
   const tool = G.toolFor(o), nt = G.have(tool);
-  return `<p>Clearing this ${b.name.toLowerCase()} makes room to build. You'll probably find some ${ic(b.drop)} ${nm(b.drop)}.</p>
+  return `<p>Clearing this ${b.name.toLowerCase()} makes room to build. You'll get 1–2 ${ic(b.drop)} ${nm(b.drop).toLowerCase()}, and sometimes a spare tool.</p>
     <div class="row"><button class="btn ${nt ? '' : 'off'}" data-act="clearTool">Use ${ic(tool)} ${nm(tool)} (${nt})</button>
     <button class="btn alt ${G.S.coins >= c ? '' : 'off'}" data-act="clear">Pay ${c} 🪙</button></div>
-    <p class="sub">${nm(tool)}s are made at the Workshop from wood and stone.</p>`;
+    <p class="sub">The Workshop makes 2 ${nm(tool).toLowerCase()}s from just 1 wood and 1 stone.</p>`;
 }
 let barnTab = 'all';
 function barnSheet() {

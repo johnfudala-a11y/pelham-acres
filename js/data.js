@@ -138,8 +138,8 @@ export const RECIPES = {
     { out: 'lavenderLatte', in: { coffee: 1, milk: 1, lavender: 1 }, time: 120, lvl: 12 },
   ],
   workshop: [
-    { out: 'axe',        in: { wood: 2, stone: 1 },   time: 40, lvl: 3 },
-    { out: 'pickaxe',    in: { wood: 1, stone: 2 },   time: 40, lvl: 3 },
+    { out: 'axe',        n: 2, in: { wood: 1, stone: 1 }, time: 30, lvl: 3 },
+    { out: 'pickaxe',    n: 2, in: { wood: 1, stone: 1 }, time: 30, lvl: 3 },
     { out: 'fertilizer', n: 2, in: { wheat: 2, carrot: 2 }, time: 45, lvl: 3 },
     { out: 'nails',      n: 2, in: { stone: 2 },      time: 60, lvl: 4 },
     { out: 'planks',     n: 2, in: { wood: 3 },       time: 60, lvl: 4 },

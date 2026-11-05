@@ -304,7 +304,7 @@ export function collectRent(o) {
 }
 
 // ---------- Obstacles ----------
-export const clearCost = o => Math.round(BUILD[o.t].clear * (1 + (S.cleared || 0) * 0.03));
+export const clearCost = o => Math.round(BUILD[o.t].clear * (1 + (S.cleared || 0) * 0.015));
 export const toolFor = o => o.t === 'tree' ? 'axe' : 'pickaxe';
 export function clearObstacle(o, useTool) {
   const b = BUILD[o.t], c = clearCost(o);
@@ -320,9 +320,11 @@ export function clearObstacle(o, useTool) {
   S.cleared = (S.cleared || 0) + 1;
   rebuildGrid();
   addXP(1); // (was 2: clearing with cheap axes was out-earning actual farming)
-  let drop = null;
-  if (Math.random() < 0.8) { const n = Math.random() < 0.4 ? 2 : 1; addItem(b.drop, n); drop = { id: b.drop, n }; }
-  return { ok: true, drop };
+  // every tree gives wood and every rock gives stone (1–2), and now and then a spare tool turns up
+  let drop = null, tool = null;
+  { const n = Math.random() < 0.45 ? 2 : 1; if (addItem(b.drop, n)) drop = { id: b.drop, n }; }
+  if (Math.random() < 0.15) { const id = Math.random() < 0.5 ? 'axe' : 'pickaxe'; if (addItem(id, 1)) tool = id; }
+  return { ok: true, drop, tool };
 }
 
 // ---------- Barn ----------
