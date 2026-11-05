@@ -36,7 +36,7 @@ export function initAudio(settings) {
       ctx = new AC();
       master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
       sfxBus = ctx.createGain(); sfxBus.gain.value = state.sfx ? 0.55 : 0; sfxBus.connect(master);
-      musicBus = ctx.createGain(); musicBus.gain.value = state.music ? 0.32 : 0; musicBus.connect(master);
+      musicBus = ctx.createGain(); musicBus.gain.value = state.music ? MUSIC_VOL() : 0; musicBus.connect(master);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       // iOS: play a silent buffer inside the gesture to fully unlock output
@@ -44,19 +44,28 @@ export function initAudio(settings) {
     }
     if (ctx.state !== 'running') { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
     if (!state.started) { state.started = true; startMusic(); startAmbience(); }
+    else if (recorded && state.music) songTick();   // iOS: resume the song inside a tap after coming back
+    blessDecks();
   };
   // Safari only allows audio to start on "activation" events (touchend / click / pointerup), not touchstart.
   for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
-    if (document.hidden) { ctx.suspend(); keepAlive && keepAlive.pause(); }
+    if (document.hidden) { ctx.suspend(); keepAlive && keepAlive.pause(); decks.forEach(d => d.el.pause()); }
     // resuming needs a tap on iOS; the unlock listener handles that on the next touch
     else { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
   });
 }
 export const audioRunning = () => !!ctx && ctx.state === 'running';
-export const audioStatus = () => ({ ctx: ctx ? ctx.state : 'none', time: ctx ? +ctx.currentTime.toFixed(1) : 0, musicBars: bar, music: state.music, sfx: state.sfx });
-export function setMusic(on) { state.music = on; if (musicBus) musicBus.gain.setTargetAtTime(on ? 0.32 : 0, ctx.currentTime, 0.3); }
+export const audioStatus = () => ({ ctx: ctx ? ctx.state : 'none', time: ctx ? +ctx.currentTime.toFixed(1) : 0, musicBars: bar, song: live >= 0 ? decks[live].el.src.split('/').pop() : null, songAt: live >= 0 ? +decks[live].el.currentTime.toFixed(1) : 0, recorded, music: state.music, sfx: state.sfx });
+export function setMusic(on) {
+  state.music = on;
+  if (musicBus) musicBus.gain.setTargetAtTime(on ? MUSIC_VOL() : 0, ctx.currentTime, 0.3);
+  // save battery: pause the recorded track while music is off, pick it back up when it's on
+  if (!on) decks.forEach(d => d.el.pause()); else if (ctx) songTick();
+}
+// the recorded tracks are mastered louder than the old synth tune, so they sit a little lower
+const MUSIC_VOL = () => (recorded ? 0.26 : 0.32);
 export function setSfx(on) { state.sfx = on; if (sfxBus) sfxBus.gain.setTargetAtTime(on ? 0.55 : 0, ctx.currentTime, 0.05); }
 
 // ---------- building blocks ----------
@@ -186,7 +195,71 @@ const PENTA = [0, 2, 4, 7, 9];
 let nextBar = 0, bar = 0, prog = PROGS[0], timer = null, lastMel = 72;
 const BPM = 82, BEAT = 60 / BPM;
 
+// ---------- recorded soundtrack ----------
+// Two daytime tracks take turns; a gentle lullaby plays in the evening and at night (device clock).
+// Tracks stream through <audio> elements (light on memory) routed into the music volume, and crossfade.
+// If they can't load (e.g. offline before they were ever downloaded), the generative tune below plays instead.
+const TRACKS = { day: ['music/day1.mp3', 'music/day2.mp3'], night: ['music/night.mp3'] };
+const FADE = 3.5;
+let decks = [], live = -1, dayIdx = 0, recorded = true, songTimer = null, lastMode = null;
+const modeNow = () => { const h = new Date().getHours() + new Date().getMinutes() / 60; return h >= 6 && h < 19.75 ? 'day' : 'night'; };
+function makeDeck() {
+  const el = new Audio(); el.preload = 'auto'; el.setAttribute('playsinline', ''); el.crossOrigin = 'anonymous';
+  const src = ctx.createMediaElementSource(el), g = ctx.createGain(); g.gain.value = 0;
+  src.connect(g); g.connect(musicBus);
+  el.addEventListener('error', () => {
+    if (!recorded) return;
+    recorded = false; decks.forEach(d => d.el.pause());
+    if (state.music) musicBus.gain.setTargetAtTime(MUSIC_VOL(), ctx.currentTime, 0.3);
+    startGenerative();
+  });
+  return { el, g };
+}
+// iOS only lets an <audio> element play from a timer once it has played inside a tap,
+// so on the first tap, briefly start the spare deck silently too.
+let blessed = false;
+function blessDecks() {
+  if (blessed || !recorded || !decks.length) return;
+  blessed = true;
+  decks.forEach((d, i) => {
+    if (i === live) return;
+    if (!d.el.src) d.el.src = TRACKS.day[1];
+    const p = d.el.play();
+    const stop = () => { if (i !== live) d.el.pause(); };
+    if (p && p.then) p.then(stop, () => { blessed = false; }); else stop();
+  });
+}
+function nextSrc(mode) { if (mode === 'night') return TRACKS.night[0]; const s = TRACKS.day[dayIdx % TRACKS.day.length]; dayIdx++; return s; }
+// fade the current track out and the next one in
+function playSong(mode) {
+  if (!ctx || !recorded) return;
+  if (!decks.length) decks = [makeDeck(), makeDeck()];
+  const t = ctx.currentTime, next = (live + 1) % 2, d = decks[next];
+  lastMode = mode;
+  d.el.src = nextSrc(mode); d.el.currentTime = 0;
+  const p = d.el.play(); if (p && p.catch) p.catch(() => {});
+  d.g.gain.cancelScheduledValues(t); d.g.gain.setValueAtTime(0.0001, t); d.g.gain.exponentialRampToValueAtTime(1, t + FADE);
+  if (live >= 0) {
+    const o = decks[live]; o.g.gain.cancelScheduledValues(t); o.g.gain.setValueAtTime(Math.max(0.0001, o.g.gain.value), t); o.g.gain.exponentialRampToValueAtTime(0.0001, t + FADE);
+    setTimeout(() => { if (decks[live] !== o) o.el.pause(); }, FADE * 1000 + 200);
+  }
+  live = next;
+}
+// every couple of seconds: start the next song shortly before this one ends, or switch for day/night
+function songTick() {
+  if (!ctx || ctx.state !== 'running' || !recorded || !state.music) return;
+  const mode = modeNow();
+  if (live < 0 || mode !== lastMode) return playSong(mode);
+  const el = decks[live].el;
+  if (el.duration && el.currentTime > el.duration - FADE - 0.5) playSong(mode);
+  else if (el.paused) { const p = el.play(); if (p && p.catch) p.catch(() => {}); }   // resume after a pause/interruption
+}
 function startMusic() {
+  if (!ctx) return;
+  if (recorded) { if (!songTimer) songTimer = setInterval(songTick, 2000); songTick(); return; }
+  startGenerative();
+}
+function startGenerative() {
   if (!ctx || timer) return;
   nextBar = ctx.currentTime + 0.3;
   timer = setInterval(schedule, 250);
