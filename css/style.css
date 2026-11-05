@@ -233,6 +233,31 @@ h3.soon { color: var(--muted); }
 .pin { position: absolute; top: -6px; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #F07B62, #B03A22);
   box-shadow: 0 2px 2px rgba(0,0,0,.3); transform: translateX(-50%); }
 
+/* ---------- Town projects, Fair, Scrapbook ---------- */
+.face.plain { object-fit: contain; padding: 6px; background: #F1E2BF; }
+.pips { display: flex; align-items: center; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
+.pip { width: 16px; height: 8px; border-radius: 4px; background: #E3CFA6; border: 1px solid rgba(94,58,27,.3); }
+.pip.on { background: linear-gradient(180deg, #F2BC48, var(--gold)); }
+.quest.project.done { opacity: .8; }
+.okline { color: var(--green-d); }
+.fairhead { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.bigimg.sm { height: 56px; }
+.track { position: relative; height: 18px; margin: 34px 14px 30px; background: #E3CFA6; border-radius: 9px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2); border: 1px solid rgba(94,58,27,.3); }
+.track .fill { height: 100%; border-radius: 9px; background: linear-gradient(180deg, #82BD52, var(--green)); }
+.tier { position: absolute; top: -26px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; font-size: 12px; filter: grayscale(.8) opacity(.7); }
+.tier .tr { height: 30px; }
+.tier b { margin-top: 18px; }
+.tier.ready, .tier.got { filter: none; }
+.tier.ready .tr { animation: pulse 1.2s ease-in-out infinite; border-radius: 50%; }
+.tierclaim { display: flex; align-items: center; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 4px 0 10px; }
+.tierlist { background: var(--paper2); border: 2px solid var(--edge); border-radius: 12px; padding: 6px 10px; display: flex; flex-direction: column; gap: 6px; }
+.kslots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.ks { background: rgba(120,80,30,.08); border: 2px dashed var(--edge); border-radius: 12px; height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 4px; }
+.ks span { font-size: 28px; font-weight: 900; color: var(--edge); font-family: var(--serif); }
+.ks small { font-size: 10.5px; line-height: 1.1; color: var(--muted); font-weight: 700; }
+.ks.got { background: #fff; border-style: solid; }
+.ks .ksimg { height: 52px; width: auto; filter: drop-shadow(0 2px 1px rgba(60,30,10,.25)); }
+
 /* ---------- Expedition ---------- */
 #exp { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; background: #4E7A3A; }
 #exp[hidden] { display: none; }
@@ -286,6 +311,9 @@ h3.soon { color: var(--muted); }
 .unlocks { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 12px 0 16px; }
 .unlocks div { background: var(--paper2); border: 2px solid var(--edge); border-radius: 12px; padding: 6px 10px; font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
 .unlocks .ai { height: 28px; }
+input.field { flex: 1; min-width: 160px; font: inherit; font-size: 16px; padding: 9px 12px; border-radius: 12px; border: 2px solid var(--edge); background: #fff;
+  -webkit-user-select: text; user-select: text; color: var(--ink); }
+input.field:focus { outline: none; border-color: var(--wood); }
 textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var(--edge); padding: 8px; font-family: monospace; font-size: 11px; -webkit-user-select: text; user-select: text; background: var(--paper2); }
 .talkhead { display: flex; flex-direction: column; align-items: center; margin-bottom: 4px; }
 .portrait-img { width: 104px; height: 104px; border-radius: 50%; object-fit: cover; object-position: 50% 8%; background: #EAD6AE;
@@ -298,6 +326,9 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
 .goals { text-align: left; }
 .rewardrow { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 14px; }
 .portrait { font-size: 56px; line-height: 1; }
+.awaylist { text-align: left; background: var(--paper2); border: 2px solid var(--edge); border-radius: 12px; padding: 6px 10px; margin: 0 0 12px; }
+.awaylist div { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding: 3px 0; }
+.awaylist .ui { height: 24px; }
 
 #toast { position: fixed; top: calc(env(safe-area-inset-top) + 64px); left: 50%; transform: translate(-50%, -20px); opacity: 0;
   background: rgba(70,42,18,.94); color: var(--cream); padding: 10px 18px; border-radius: 14px; font-weight: 700; pointer-events: none; border: 2px solid var(--wood-l);

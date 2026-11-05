@@ -244,7 +244,7 @@ export const IN_SEASON_BONUS = 1.2;    // and pay 20% more in orders
 export const TRAIN = { stay: 45 * 60000, away: 15 * 60000, crates: 6 };
 
 // XP needed to go from level L to L+1 (×1.2: every level takes 20% more than the original curve)
-export const XP_SCALE = 1.2;
+export const XP_SCALE = globalThis.PA_XP_SCALE ?? 1.2; // (overridable only by the balance simulator)
 export const xpFor = L => Math.round((10 * Math.pow(L, 1.6) + 12) * XP_SCALE);
 
 // What unlocks at a level (for the level-up screen and shop).

@@ -14,7 +14,7 @@ export const season = () => SEASONS[seasonIndex()];
 export function seasonEndsAt() { const t = now(), lt = localT(t); return t + (SEASON_MS - (lt % SEASON_MS)); }
 export const inSeason = c => season().crops.includes(c);
 // Overall pace: every crop, recipe and animal takes this many times its base time (1.25 = 20% slower).
-export const TIME_SCALE = 1.25;
+export const TIME_SCALE = globalThis.PA_TIME_SCALE ?? 1.25; // (overridable only by the balance simulator)
 export const cropTime = c => CROPS[c].time * TIME_SCALE * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1);
 export const animalTime = (o, a) => a.time * TIME_SCALE * speedOf(o);
 
@@ -285,7 +285,7 @@ export function clearObstacle(o, useTool) {
   S.objs.splice(S.objs.indexOf(o), 1);
   S.cleared = (S.cleared || 0) + 1;
   rebuildGrid();
-  addXP(2);
+  addXP(1); // (was 2: clearing with cheap axes was out-earning actual farming)
   let drop = null;
   if (Math.random() < 0.8) { const n = Math.random() < 0.4 ? 2 : 1; addItem(b.drop, n); drop = { id: b.drop, n }; }
   return { ok: true, drop };
@@ -314,7 +314,7 @@ export function charm() {
     if (b.kind === 'civic') civic += b.charm;
     else if (b.kind === 'decor') decor += b.charm || 0;
   }
-  return civic + Math.min(DECOR_CHARM_CAP, decor);
+  return civic + Math.min(DECOR_CHARM_CAP, decor) + (S.projectCharm || 0); // + finished Town Projects
 }
 
 // ---------- Orders ----------
@@ -480,6 +480,11 @@ export function load() {
     if (s && s.v === 1) { S = s; S.settings = S.settings || { music: true, sfx: true }; rebuildGrid(); return true; }
   } catch (e) { /* corrupt save */ }
   return false;
+}
+// replace the whole farm (used when loading the cloud copy)
+export function setState(s) {
+  if (!s || s.v !== 1 || !Array.isArray(s.objs)) throw new Error('bad save');
+  S = s; S.settings = S.settings || { music: true, sfx: true }; rebuildGrid(); save();
 }
 export function exportSave() { return btoa(unescape(encodeURIComponent(JSON.stringify(S)))); }
 export function importSave(str) {

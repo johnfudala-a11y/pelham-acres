@@ -379,14 +379,25 @@ function drawPenGround(o, b) {
   const g = ctx.createLinearGradient(tx, ty, bx, by);
   g.addColorStop(0, 'rgba(70,50,20,.22)'); g.addColorStop(0.5, 'rgba(70,50,20,0)'); g.addColorStop(1, 'rgba(255,240,200,.12)');
   ctx.fillStyle = g; ctx.fillRect(tx - 200, ty, 400, by - ty);
-  for (let i = 0; i < 70 * b.w * b.h; i++) {
-    const u = hash(o.id * 97 + i), v = hash(o.id * 53 + i * 7), [sx, sy] = P(o.x + u * b.w, o.y + v * b.h), k = hash(i * 13 + o.id);
-    if (k < 0.45) { ctx.strokeStyle = 'rgba(232,200,110,.75)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx - 2, sy); ctx.lineTo(sx + 2, sy - 1 + k * 2); ctx.stroke(); } // straw
-    else if (k < 0.75) { ctx.fillStyle = 'rgba(110,80,40,.28)'; ctx.fillRect(sx, sy, 2, 1); }                                          // dirt
-    else { ctx.fillStyle = 'rgba(70,120,40,.5)'; ctx.fillRect(sx, sy - 2, 1, 3); ctx.fillRect(sx + 2, sy - 1, 1, 2); }                   // grass tuft
+  // straw, dirt and tufts are built once per pen position, then drawn as 3 shapes
+  const key = o.id + ':' + o.x + ',' + o.y;
+  let tex = penTex.get(key);
+  if (!tex) {
+    tex = { straw: new Path2D(), dirt: new Path2D(), tuft: new Path2D() };
+    for (let i = 0; i < 70 * b.w * b.h; i++) {
+      const u = hash(o.id * 97 + i), v = hash(o.id * 53 + i * 7), [sx, sy] = P(o.x + u * b.w, o.y + v * b.h), k = hash(i * 13 + o.id);
+      if (k < 0.45) { tex.straw.moveTo(sx - 2, sy); tex.straw.lineTo(sx + 2, sy - 1 + k * 2); }
+      else if (k < 0.75) tex.dirt.rect(sx, sy, 2, 1);
+      else { tex.tuft.rect(sx, sy - 2, 1, 3); tex.tuft.rect(sx + 2, sy - 1, 1, 2); }
+    }
+    penTex.set(key, tex);
   }
+  ctx.strokeStyle = 'rgba(232,200,110,.75)'; ctx.lineWidth = 1; ctx.stroke(tex.straw);
+  ctx.fillStyle = 'rgba(110,80,40,.28)'; ctx.fill(tex.dirt);
+  ctx.fillStyle = 'rgba(70,120,40,.5)'; ctx.fill(tex.tuft);
   ctx.restore();
 }
+const penTex = new Map();
 // A rustic post-and-rail fence from p1 to p2 with n sections: shaded rails, posts with caps.
 function drawFenceRun(p1, p2, n, leftFace, gate) {
   const side = leftFace ? '#8A5E33' : '#74492A', top = '#B88A55', post = '#6B4424', cap = '#C69C66';
@@ -530,6 +541,18 @@ function drawStatus(o, b, t) {
 
 // ---------- main draw ----------
 let drawList = [];
+let _ground = null;
+function groundPaths() {
+  if (_ground) return _ground;
+  const even = new Path2D(), odd = new Path2D(), lines = new Path2D();
+  for (let gy = 0; gy < MAP; gy++) for (let gx = 0; gx < MAP; gx++) {
+    const d = diamond(gx, gy, 1, 1), path = (gx + gy) % 2 ? odd : even;
+    for (const p of [path].concat(hash(gx * 97 + gy * 13) < 0.5 ? [] : [lines])) {
+      p.moveTo(d[0][0], d[0][1]); for (let i = 1; i < 4; i++) p.lineTo(d[i][0], d[i][1]); p.closePath();
+    }
+  }
+  return (_ground = { even, odd, lines });
+}
 export function draw() {
   const t = now(), pt = performance.now();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -541,16 +564,11 @@ export function draw() {
   const margin = 80, z = cam.z;
   const vis = (px, py) => { const sx = px * z + W / 2 + cam.x, sy = py * z + H / 2 + cam.y; return sx > -margin * z && sx < W + margin * z && sy > -margin * z * 2 && sy < H + margin * z * 2; };
 
-  // ground
-  poly(diamond(0, 0, MAP, MAP), null, null);
-  ctx.save();
-  for (let gy = 0; gy < MAP; gy++) for (let gx = 0; gx < MAP; gx++) {
-    const [cx, cy] = P(gx + 0.5, gy + 0.5);
-    if (!vis(cx, cy)) continue;
-    const v = hash(gx * 97 + gy * 13);
-    poly(diamond(gx, gy, 1, 1), se.ground[(gx + gy) % 2], v < 0.5 ? null : 'rgba(0,0,0,0.025)');
-  }
-  ctx.restore();
+  // ground: the checkerboard is two pre-built shapes (2 fills instead of 900 tiles every frame)
+  const GP = groundPaths();
+  ctx.fillStyle = se.ground[0]; ctx.fill(GP.even);
+  ctx.fillStyle = se.ground[1]; ctx.fill(GP.odd);
+  ctx.strokeStyle = 'rgba(0,0,0,0.025)'; ctx.lineWidth = 1; ctx.stroke(GP.lines);
   // map edge
   ctx.strokeStyle = 'rgba(40,70,25,.5)'; ctx.lineWidth = 3; poly(diamond(0, 0, MAP, MAP), null, null); ctx.stroke();
 

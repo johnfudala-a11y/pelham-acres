@@ -5,7 +5,9 @@ import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
-export const APP_VERSION = '0.17';
+import * as E from './extras.js';
+import * as C from './cloud.js';
+export const APP_VERSION = '0.18';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
 
@@ -210,6 +212,10 @@ function act(el) {
   const d = el.dataset, o = sheetObj;
   switch (d.act) {
     case 'closeModal': closeModal(); setTimeout(showLevelUps, 200); break;
+    case 'collectAll': collectAll(); return;
+    case 'cloudSend': case 'cloudVerify': case 'cloudBack': case 'cloudSave': case 'cloudLoad': case 'cloudOut': cloudAct(d.act); return;
+    case 'cloudUseCloud': if (pendingCloud) { G.setState(pendingCloud); pendingCloud = null; afterLoad(); closeModal(); closeSheet(); toast('Cloud farm loaded ☁️'); } return;
+    case 'cloudKeepLocal': pendingCloud = null; closeModal(); C.upload(true).then(() => toast('This farm is now the cloud copy ☁️')).catch(e => toast('Cloud: ' + e.message)); return;
     case 'claimQuest': claimQuest(d.id); return;
     case 'claimDaily': {
       const r = Q.claimDaily();
@@ -268,14 +274,35 @@ function act(el) {
       const r = G.clearObstacle(o, d.act === 'clearTool');
       if (r.err) { sfx.error(); toast(r.err === 'tool' ? `No ${nm(G.toolFor(o))}. Make one at the Workshop.` : 'Not enough coins'); break; }
       sfx.clear();
-      floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${em(r.drop.id)}` : '+2 XP');
+      floater(o.x + 0.5, o.y + 0.5, r.drop ? `+${r.drop.n}${em(r.drop.id)}` : '+1 XP');
+      foundKeepsake(E.rollKeepsake('clear'));
       closeSheet(); break;
     }
     case 'deliver': {
+      const items = { ...(G.S.orders[+d.i]?.items || {}) };
       const r = G.deliver(+d.i);
-      if (r) { sfx.deliver(); toast(`Delivered! +${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}`); }
+      if (r) {
+        sfx.deliver();
+        const fair = E.fairCount(items);
+        toast(`Delivered! +${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}${fair ? ` · +${fair} toward the ${E.fairName()}` : ''}`);
+        foundKeepsake(E.rollKeepsake('deliver'));
+      }
       break;
     }
+    case 'qtab': sfx.tap(); questTab = d.tab; $('#sheetBody').scrollTop = 0; break;
+    case 'fund': {
+      const p = E.PROJECTS.find(x => x.id === d.id), r = E.fundStage(p);
+      if (!r) { sfx.error(); toast('Not enough yet'); break; }
+      sfx.build();
+      if (r === 'done') { sfx.levelUp(); modal(`<div class="bigart">${IMG(`sprites/${p.art}.webp`, '🏗️', 'bigimg')}</div><h2>${p.name}: complete!</h2>
+        ${talkHead(p.who)}<div class="say">You did it! The whole town turned out to celebrate. Pelham Acres has never looked better.</div>
+        <div class="rewardrow">${rewardLine({ hg: p.reward.hg, xp: p.reward.xp })}<span class="chip">+${p.reward.charm} charm, forever</span></div>
+        <button class="btn wide" data-act="closeModal">Wonderful!</button>`); }
+      else toast(`Stage ${E.projectStage(p)} of ${p.stages.length} done! The townsfolk cheer.`);
+      break;
+    }
+    case 'claimFair': { const pr = E.claimFair(); if (pr) { sfx.levelUp(); toast(`Fair prize! +${fmtN(pr.coins)} 🪙 +${pr.hg} ⏳ +${pr.xp} XP`); } break; }
+    case 'claimSet': { const s = E.KEEPSAKE_SETS.find(x => x.id === d.id), r = E.claimSet(s); if (r) { sfx.levelUp(); toast(`${s.name} complete! +${fmtN(r.coins)} 🪙 +${r.hg} ⏳`); } break; }
     case 'skip': G.skipOrder(+d.i); break;
     case 'sell': { const c = G.sell(d.id, +d.n); if (c) { sfx.coin(); toast(`Sold for ${c} 🪙`); } break; }
     case 'upgradeBarn': if (G.upgradeBarn()) { sfx.build(); toast('Barn upgraded! +30 space'); } else { sfx.error(); toast('Need more coins or materials'); } break;
@@ -348,7 +375,21 @@ function petCat(c) {
     if (Math.random() < 0.6 && G.addItem(id, 1)) { floater(c.x, c.y, `⚡ +1${em(id)}`); toast(`Milo does zoomies and drops a ${nm(id).toLowerCase()} at your feet!`); }
     else { floater(c.x, c.y, '⚡ zoomies!', '#FFFFFF'); toast('Milo does a lap of the whole farm at top speed.'); }
   }
+  setTimeout(() => foundKeepsake(E.rollKeepsake('pet')), 1200);
   G.save(); refreshHud();
+}
+// a keepsake turned up: a little celebration, and it goes into the Scrapbook
+const ksArt = (id, cls = 'ai') => IMG(`sprites/ks-${id}.webp`, '🎁', cls);
+function foundKeepsake(id) {
+  if (!id) return;
+  const set = E.KEEPSAKE_SETS.find(s => s.items.includes(id)), have = set.items.filter(E.hasKeepsake).length;
+  sfx.collect();
+  if (!$('#modal').hidden) { toast(`Keepsake found: ${E.KEEPSAKE_NAMES[id]}! (${have}/4 ${set.name})`); return; }
+  modal(`<div class="bigart">${ksArt(id, 'bigimg')}</div><h2>A keepsake!</h2>
+    <p>You found a <b>${E.KEEPSAKE_NAMES[id]}</b>.</p>
+    <p class="sub">${set.name}: ${have} of 4 · find them all for a reward. See your Scrapbook in Quests.</p>
+    <button class="btn wide" data-act="closeModal">Into the scrapbook it goes</button>`);
+  G.save();
 }
 
 function tapObject(o) {
@@ -374,6 +415,7 @@ function harvestField(o) {
   if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
   if (r) sfx.harvest();
   if (r) floater(o.x + 0.5, o.y + 0.5, `+${r.n}${CROPS[c].icon}`, r.n > CROP_YIELD ? '#FFE9A8' : '#fff');
+  if (r) { const k = E.rollKeepsake('harvest'); if (k) setTimeout(() => foundKeepsake(k), 500); }
   return !!r;
 }
 
@@ -557,12 +599,69 @@ function menuSheet() {
     <button class="btn alt sm" data-act="toggle" data-k="sfx">Sound effects: ${st.sfx ? 'On' : 'Off'}</button></div>
     <p class="sub">No sound? Turn the volume up and tap the map once. You can also tap 🔊 in the top corner.</p>
     <h3>Mastery</h3>${masteryList()}
-    <h3>Backup</h3><p class="sub">Cloud saves are coming. For now, copy this code to keep a backup, or paste one to restore.</p>
+    ${cloudHtml()}
+    <h3>Backup code</h3><p class="sub">You can also copy this code to keep a backup, or paste one to restore.</p>
     <textarea id="saveText" placeholder="Save code"></textarea><div class="row" style="margin-top:8px">
     <button class="btn alt sm" data-act="export">Copy save code</button><button class="btn alt sm" data-act="import">Load pasted code</button></div>
     <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
     <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
 }
+// ---------- cloud saves ----------
+let cloudStep = 'email', cloudEmailVal = '', cloudBusy = false;
+function cloudHtml() {
+  if (!C.cloudEnabled()) return `<h3>Cloud save</h3><p class="sub">Coming very soon: sign in to keep your farm safe and play on any device.</p>`;
+  if (C.signedIn()) {
+    const ago = C.lastSync() ? fmtT(now() - C.lastSync()) + ' ago' : 'not yet';
+    return `<h3>Cloud save</h3><div class="storebar"><div class="row">${ui('lock', '')}<b class="grow">Signed in as ${C.userEmail()}</b></div>
+      <div class="sub" style="margin:4px 0 0">Your farm saves to the cloud automatically. Last cloud save: ${ago}.</div></div>
+      <div class="row"><button class="btn sm" data-act="cloudSave">Save now</button><button class="btn alt sm" data-act="cloudLoad">Load cloud farm</button>
+      <span class="spacer"></span><button class="btn alt sm" data-act="cloudOut">Sign out</button></div>`;
+  }
+  if (cloudStep === 'code') return `<h3>Cloud save</h3><p class="sub">We emailed a 6-digit code to <b>${cloudEmailVal}</b>. Type it here:</p>
+    <div class="row"><input id="cloudCode" class="field" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456">
+    <button class="btn ${cloudBusy ? 'off' : ''}" data-act="cloudVerify">Sign in</button><button class="btn alt sm" data-act="cloudBack">Back</button></div>`;
+  return `<h3>Cloud save</h3><p class="sub">Sign in with your email to keep your farm safe and play it on any device. No password: we email you a code.</p>
+    <div class="row"><input id="cloudEmail" class="field" type="email" autocomplete="email" placeholder="you@example.com" value="${cloudEmailVal}">
+    <button class="btn ${cloudBusy ? 'off' : ''}" data-act="cloudSend">Email me a code</button></div>`;
+}
+async function cloudAct(a) {
+  if (cloudBusy) return;
+  try {
+    cloudBusy = true;
+    if (a === 'cloudSend') {
+      const v = ($('#cloudEmail')?.value || '').trim();
+      if (!/^\S+@\S+\.\S+$/.test(v)) { toast('Please type your email address'); return; }
+      cloudEmailVal = v; await C.sendCode(v); cloudStep = 'code'; toast('Code sent! Check your email.');
+    } else if (a === 'cloudVerify') {
+      const code = ($('#cloudCode')?.value || '').trim();
+      if (code.length < 6) { toast('Type the code from the email'); return; }
+      await C.verifyCode(cloudEmailVal, code); cloudStep = 'email';
+      toast('Signed in!'); await cloudCheck(true);
+    } else if (a === 'cloudBack') cloudStep = 'email';
+    else if (a === 'cloudSave') { await C.upload(true); toast('Farm saved to the cloud ☁️'); }
+    else if (a === 'cloudLoad') await cloudCheck(true, true);
+    else if (a === 'cloudOut') { await C.upload(true).catch(() => {}); C.signOut(); toast('Signed out. Your farm stays on this device too.'); }
+  } catch (e) { sfx.error(); toast(`Cloud: ${e.message}`); }
+  finally { cloudBusy = false; renderSheet(); }
+}
+// Compare this device's farm with the cloud copy; offer a choice if the cloud one is newer (or when asked).
+async function cloudCheck(afterSignIn, ask) {
+  if (!C.cloudEnabled() || !C.signedIn()) return;
+  const cloud = await C.fetchCloud();
+  if (!cloud) { await C.upload(true); if (afterSignIn) toast('Your farm is now saved in the cloud ☁️'); return; }
+  const local = G.S, newer = (cloud.saved || 0) > (local.saved || 0) + 60000;
+  if (!newer && !ask) { await C.upload(true); return; }
+  modal(`<div class="bigart">${ui('barn', '').replace('class="ui"', 'class="bigimg"')}</div><h2>Which farm?</h2>
+    <p class="sub">There's a farm saved in the cloud and one on this device.</p>
+    <div class="awaylist"><div><b>Cloud:</b>&nbsp;${C.describe(cloud)}</div><div><b>This device:</b>&nbsp;${C.describe(local)}</div></div>
+    <button class="btn gold wide" data-act="cloudUseCloud">Play the cloud farm</button><div style="height:8px"></div>
+    <button class="btn alt wide" data-act="cloudKeepLocal">Keep this device's farm</button>`);
+  pendingCloud = cloud;
+}
+let pendingCloud = null;
+setInterval(() => { C.upload(false).catch(() => {}); }, 60000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) C.upload(false, true).catch(() => {}); });
+
 // ---------- expedition ----------
 let expRegion = 'woods';
 function openExpedition() {
@@ -638,6 +737,7 @@ $('#expGrid').addEventListener('click', e => {
   const r = X.explore(reg, i);
   if (r.err === 'energy') { sfx.error(); toast(`Need ${r.cost} ⚡ energy. Eat something from your picnic basket, or wait for it to refill.`); return; }
   if (!r.ok) return;
+  setTimeout(() => foundKeepsake(E.rollKeepsake('explore')), 900);
   ({ chest: sfx.levelUp, rock: sfx.clear, ore: sfx.clear, gemrock: sfx.collect, brush: sfx.clear, berries: sfx.harvest, ruin: sfx.build }[r.type] || sfx.plant).call(sfx);
   const bits = [];
   if (r.coins) bits.push(`+${r.coins}🪙`);
@@ -707,8 +807,56 @@ function dailyHtml() {
     <div class="qfoot">${rewardLine({ coins: d.coins, xp: d.xp, hg: d.hg })}<span class="spacer"></span>
     <button class="btn ${ok ? 'gold' : 'off'}" data-act="claimDaily">Give</button></div></div>`;
 }
+let questTab = 'requests';
 function questsSheet() {
   Q.refreshQuests();
+  const projReady = E.PROJECTS.filter(p => E.projectOpen(p) && !E.projectDone(p) && E.canFundStage(p)).length;
+  const setsReady = E.KEEPSAKE_SETS.filter(s => E.setComplete(s) && !E.setClaimed(s)).length;
+  const TABS = [['requests', 'Requests', 'icon-scroll', Q.claimable().length], ['projects', 'Projects', 'icon-hammer', projReady],
+    ['fair', 'Fair', 'icon-ribbon', E.fairClaimable() ? 1 : 0], ['album', 'Scrapbook', 'icon-quill', setsReady]];
+  const tabs = `<div class="tabs">${TABS.map(([k, label, im, n]) => `<button class="tab ${questTab === k ? 'on' : ''}" data-act="qtab" data-tab="${k}">${IMG(`sprites/${im}.webp`, '', 'ti')}<span>${label}</span>${n ? `<i class="tcount">${n}</i>` : ''}</button>`).join('')}</div>`;
+  return tabs + (questTab === 'projects' ? projectsHtml() : questTab === 'fair' ? fairHtml() : questTab === 'album' ? albumHtml() : requestsHtml());
+}
+function projectsHtml() {
+  return `<p class="sub">Big jobs the whole town pitches in on. Each takes three stages of coins and goods, and a finished project adds charm forever (better order rewards).</p>` +
+    E.PROJECTS.map(p => {
+      const st = E.projectStage(p), done = E.projectDone(p), open = E.projectOpen(p), stage = p.stages[st];
+      const pips = p.stages.map((_, i) => `<span class="pip ${i < st ? 'on' : ''}"></span>`).join('');
+      if (!open) return `<div class="soonrow">${IMG(`sprites/${p.art}.webp`, '', 'si')}<span class="nm">${p.name}</span><span class="spacer"></span><span class="lk">Level ${p.lvl}</span></div>`;
+      return `<div class="quest project ${done ? 'done' : E.canFundStage(p) ? 'ready' : ''}">
+        <div class="qh">${IMG(`sprites/${p.art}.webp`, '🏗️', 'face plain')}<div class="grow"><div class="qkind">Town project</div><div class="qt">${p.name}</div>
+        <div class="pips">${pips}<span class="qwho">${done ? 'Complete!' : `Stage ${st + 1} of ${p.stages.length}`} · led by ${PEOPLE[p.who].name}</span></div></div></div>
+        <div class="said">“${p.blurb}”</div>
+        ${done ? `<div class="qfoot"><span class="chip">+${p.reward.charm} charm</span><span class="spacer"></span><b class="okline">✔ Finished</b></div>` : `
+        <div class="row reqs"><span class="req ${G.S.coins >= stage.coins ? 'ok' : 'no'}">🪙 ${fmtN(stage.coins)}</span>${reqs(stage.items)}</div>
+        <div class="qfoot"><span class="sub" style="margin:0">On completion:</span>${rewardLine({ hg: p.reward.hg, xp: p.reward.xp })}<span class="chip">+${p.reward.charm} charm</span><span class="spacer"></span>
+        <button class="btn ${E.canFundStage(p) ? 'gold' : 'off'}" data-act="fund" data-id="${p.id}">Fund stage ${st + 1}</button></div>`}</div>`;
+    }).join('');
+}
+function fairHtml() {
+  if (G.S.level < 6) return `<div class="bigart">${ui('ribbon', '🎀').replace('class="ui"', 'class="bigimg"')}</div><p>Each season Pelham Acres holds a fair. Deliver in-season goods to win prizes.</p><p class="sub">The fair opens at level 6.</p>`;
+  const f = E.fair(), se = G.season(), max = E.FAIR_TIERS[E.FAIR_TIERS.length - 1];
+  const tiers = E.FAIR_TIERS.map((n, i) => {
+    const pr = E.fairPrize(i), got = i < f.got, ready = !got && f.n >= n;
+    return `<div class="tier ${got ? 'got' : ready ? 'ready' : ''}" style="left:${n / max * 100}%">${IMG('sprites/icon-ribbon.webp', '🎀', 'tr')}<b>${n}</b></div>`;
+  }).join('');
+  const claim = E.fairClaimable() ? `<div class="tierclaim">${rewardLine(E.fairPrize(f.got))}<button class="btn gold sm" data-act="claimFair">Claim prize ${f.got + 1}</button></div>` : '';
+  return `<div class="fairhead">${ui(se.name.toLowerCase(), se.icon).replace('class="ui"', 'class="bigimg sm"')}<div><div class="qkind">This season</div><h3 style="margin:2px 0">${E.fairName()}</h3>
+      <div class="sub" style="margin:0">Ends in ${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</div></div></div>
+    <p>Deliver <b>in-season</b> goods in orders to fill the ribbon track. In season now: ${se.crops.map(c => `<span class="chip">${art(c)} ${CROPS[c].name}</span>`).join(' ')}</p>
+    <div class="track"><div class="fill" style="width:${Math.min(100, f.n / max * 100)}%"></div>${tiers}</div>${claim}
+    <p class="sub" style="text-align:center">${f.n} in-season goods delivered${f.got >= E.FAIR_TIERS.length ? ' · all prizes won this season!' : ''}</p>
+    <div class="tierlist">${E.FAIR_TIERS.map((n, i) => `<div class="row"><b style="width:60px">Prize ${i + 1}</b><span class="sub" style="margin:0;width:70px">${n} goods</span>${rewardLine(E.fairPrize(i))}${i < f.got ? ' ✔' : ''}</div>`).join('')}</div>`;
+}
+function albumHtml() {
+  return `<p class="sub">Little treasures turn up as you farm, pet the cats and explore. ${E.albumCount()} of 16 found.</p>` + E.KEEPSAKE_SETS.map(s => {
+    const n = s.items.filter(E.hasKeepsake).length, done = E.setComplete(s), claimed = E.setClaimed(s);
+    return `<div class="quest album ${done && !claimed ? 'ready' : ''}"><div class="row"><div class="grow"><div class="qt">${s.name}</div><div class="qwho">${s.hint}</div></div><b>${n}/4</b></div>
+      <div class="kslots">${s.items.map(id => E.hasKeepsake(id) ? `<div class="ks got">${ksArt(id, 'ksimg')}<small>${E.KEEPSAKE_NAMES[id]}</small></div>` : `<div class="ks"><span>?</span><small>Not found yet</small></div>`).join('')}</div>
+      <div class="qfoot">${rewardLine(s.reward)}<span class="spacer"></span>${claimed ? '<b class="okline">✔ Claimed</b>' : `<button class="btn ${done ? 'gold' : 'off'}" data-act="claimSet" data-id="${s.id}">Claim</button>`}</div></div>`;
+  }).join('');
+}
+function requestsHtml() {
   const list = Q.activeQuests().slice().sort((a, b) => Q.isComplete(b) - Q.isComplete(a));
   if (!list.length) return dailyHtml() + '<p class="sub">No requests right now. Keep farming! New ones arrive as you level up.</p>';
   return dailyHtml() + list.map(q => {
@@ -763,7 +911,7 @@ function questTick() {
     const mine = Q.questsFor(p.id);
     p.badge = mine.some(Q.isComplete) ? '✓' : mine.some(q => !G.S.quests.active[q.id].seen) ? '!' : null;
   }
-  const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length;
+  const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length + E.extrasNotice();
   b.hidden = !n; b.textContent = n;
   if ($('#modal').hidden && !levelQueue.length) { const u = Q.unseen()[0]; if (u) questIntro(u); }
   applyGuide();
@@ -994,10 +1142,76 @@ if (!loaded) {
     <button class="btn wide" data-act="closeModal">Let's farm!</button>`);
 } else {
   const away = now() - (G.S.saved || now());
-  if (away > 60000) setTimeout(() => toast(`Welcome back! You were away ${fmtT(away)} — your farm kept working.`), 600);
+  if (away > 120000) setTimeout(() => showAway(away), 700);
 }
+// signed-in players: check whether the cloud has a newer farm (e.g. played on another device)
+if (C.cloudEnabled() && C.signedIn()) setTimeout(() => cloudCheck(false).catch(() => {}), 1500);
+// ---------- "While you were away" ----------
+// Everything that finished while the game was closed, with one button to gather the simple pickups.
+function readyReport() {
+  const t = now(), r = { items: {}, rent: 0, n: 0, train: false, orders: G.readyOrders() };
+  const add = (id, n) => { r.items[id] = (r.items[id] || 0) + n; r.n += n; };
+  for (const o of G.S.objs) {
+    const b = BUILD[o.t];
+    if (b.kind === 'field' && o.crop && o.end <= t) add(o.crop, CROP_YIELD);
+    else if (b.kind === 'producer') for (const j of o.jobs) { if (j.end <= t) add(j.out, j.n); }
+    else if (b.kind === 'pen') { const a = G.penAnimal(o); for (const an of o.animals) if (G.animalState(an) === 'ready') add(a.product, 1); }
+    else if (b.kind === 'house') r.rent += G.rentDue(o) * G.rentOf(o);
+    else if (b.kind === 'station' && G.trainState(o).status === 'here') r.train = true;
+  }
+  r.energyFull = Q.hasFlag('expedition') && X.energy() >= X.ENERGY.max;
+  return r;
+}
+function showAway(ms) {
+  if (!$('#modal').hidden) return;
+  const r = readyReport();
+  if (!r.n && !r.rent && !r.train && !r.orders) { toast(`Welcome back! You were away ${fmtT(ms)}.`); return; }
+  const chips = Object.entries(r.items).map(([k, n]) => `<span class="chip">${art(k)} ${n}</span>`).join('') + (r.rent ? `<span class="chip">🪙 ${fmtN(r.rent)} rent</span>` : '');
+  const lines = [];
+  if (r.orders) lines.push(`${ui('mail', '')} ${r.orders} order${r.orders > 1 ? 's are' : ' is'} ready to deliver`);
+  if (r.train) lines.push(`${ui('train', '')} The freight train is waiting at the station`);
+  if (r.energyFull) lines.push(`${ui('energy', '')} Your exploring energy is full`);
+  sfx.open();
+  modal(`<div class="bigart">${IMG('sprites/ollie-sleep.webp', '🐈', 'bigimg')}</div><h2>Welcome back!</h2>
+    <p class="sub">You were away ${fmtT(ms)}. Ollie kept an eye on things.</p>
+    ${chips ? `<b>Ready to collect</b><div class="rewardrow">${`<span class="chips">${chips}</span>`}</div>` : ''}
+    ${lines.length ? `<div class="awaylist">${lines.map(l => `<div>${l}</div>`).join('')}</div>` : ''}
+    ${r.n || r.rent ? '<button class="btn gold wide" data-act="collectAll">Collect everything</button><div style="height:8px"></div>' : ''}
+    <button class="btn alt wide" data-act="closeModal">I'll look around</button>`);
+}
+// gather every ready crop, good, animal product and rent payment in one go
+function collectAll() {
+  let items = 0, coins = 0, full = false;
+  for (const o of G.S.objs) {
+    const k = BUILD[o.t].kind;
+    if (k === 'field' && o.crop && o.end <= now()) { const r = G.harvest(o); if (r === 'full') { full = true; break; } if (r) items += r.n; }
+    else if (k === 'producer') { const r = G.collectJobs(o); items += r.got.reduce((s, j) => s + j.n, 0); if (r.full) { full = true; break; } }
+    else if (k === 'pen') { const r = G.collectAnimals(o); items += r.got; if (r.full) { full = true; break; } }
+    else if (k === 'house') coins += G.collectRent(o);
+  }
+  if (items || coins) sfx.collect();
+  closeModal();
+  toast(`Collected ${items} item${items === 1 ? '' : 's'}${coins ? ` and ${fmtN(coins)} 🪙` : ''}${full ? ' · the barn is full!' : ''}`);
+  G.save(); refreshHud(); setTimeout(showLevelUps, 400);
+}
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) hiddenAt = now();
+  else if (hiddenAt && now() - hiddenAt > 120000) setTimeout(() => showAway(now() - hiddenAt), 400);
+});
 
-function frame() { draw(); requestAnimationFrame(frame); }
+// Battery saver: full 60fps while you're touching/panning (and for 4s after), 30fps when just watching,
+// and no farm drawing at all while the full-screen expedition map covers it.
+let lastInput = 0, lastDraw = 0;
+for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown']) addEventListener(ev, () => { lastInput = performance.now(); }, { passive: true });
+function frame(ts) {
+  requestAnimationFrame(frame);
+  if (!$('#exp').hidden) return;
+  const busy = ts - lastInput < 4000;
+  if (!busy && ts - lastDraw < 30) return;
+  lastDraw = ts;
+  draw();
+}
 requestAnimationFrame(frame);
 setInterval(() => { refreshHud(); liveUpdate(); if ($('#exp').hidden) questTick(); else updateEnergy(); }, 500);
 setInterval(() => G.save(), 5000);
