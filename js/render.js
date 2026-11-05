@@ -700,6 +700,81 @@ export function skyNow() {
   const mist = !rain && r >= 0.18 && r < 0.36 && h >= 5 && h < 9.5;
   return { h, c, glow, rain, mist };
 }
+// ---------- fireflies ----------
+// Like the real thing: each one drifts slowly and lazily a little above the grass, staying near trees,
+// hedges, fields and water. It's dark most of the time, then gives a short flash (a quick brighten, a slower
+// fade) every few seconds while swooping upward in a little "J" and leaving a faint streak. The flash lights a
+// small pool on the ground beneath it, and now and then a neighbour answers. They come out at dusk, are
+// busiest in mid-summer around 9–11 pm, and thin out after midnight.
+let flies = [], lastFlyT = 0;
+function flyHome() {
+  const spots = S.objs.filter(o => ['tree', 'hedge', 'field', 'pond', 'flowers'].includes(o.t) && o.x >= 8 && o.y >= 8 && o.x <= 21 && o.y <= 21);
+  const o = spots.length ? spots[Math.floor(Math.random() * spots.length)] : { x: 8 + Math.random() * 14, y: 8 + Math.random() * 14 };
+  return { x: o.x + 0.5, y: o.y + 0.5 };
+}
+function newFly() {
+  const h = flyHome();
+  return { hx: h.x, hy: h.y, x: h.x + (Math.random() - 0.5), y: h.y + (Math.random() - 0.5), z: 8 + Math.random() * 22,
+    dir: Math.random() * 7, turn: 0, speed: 0.12 + Math.random() * 0.12,
+    period: 2.6 + Math.random() * 3.6, next: Math.random() * 6, flash: -1, trail: [], life: 40 + Math.random() * 80 };
+}
+function fireflyCount(h, glow) {
+  const se = season().name, base = se === 'Summer' ? 46 : se === 'Spring' ? 20 : 24;   // fall: a few late stragglers
+  const hrs = h >= 19 ? h - 19 : h + 5;                    // hours since 7 pm
+  const shape = hrs < 2 ? hrs / 2 : hrs < 5 ? 1 : Math.max(0.15, 1 - (hrs - 5) / 4);   // dusk rise, late-evening peak, thin after midnight
+  return Math.round(base * shape * Math.min(1, (glow - 0.35) / 0.3));
+}
+function drawFireflies(pt, sky, glow) {
+  const dt = lastFlyT ? Math.min(0.1, (pt - lastFlyT) / 1000) : 0; lastFlyT = pt;
+  const want = glow > 0.35 ? fireflyCount(sky.h, glow) : 0;
+  while (flies.length < want) flies.push(newFly());
+  if (flies.length > want) flies.length = want;
+  for (let i = 0; i < flies.length; i++) {
+    const f = flies[i];
+    // lazy wandering: the heading drifts smoothly; a gentle pull keeps it near home
+    f.turn += (Math.random() - 0.5) * 3 * dt; f.turn *= 0.96; f.dir += f.turn * dt * 3;
+    const hx = f.hx - f.x, hy = f.hy - f.y, far = Math.hypot(hx, hy);
+    if (far > 1.6) { let d = Math.atan2(hy, hx) - f.dir; d = Math.atan2(Math.sin(d), Math.cos(d)); f.dir += Math.sign(d) * dt * 1.2; }
+    f.x += Math.cos(f.dir) * f.speed * dt; f.y += Math.sin(f.dir) * f.speed * dt;
+    // bob slowly between grass height and head height; climb during a flash (the "J")
+    f.z += (Math.sin(pt / 1700 + i * 2.1) * 4 - (f.z - 16) * 0.3) * dt;
+    f.z = Math.max(5, Math.min(55, f.z));
+    f.next -= dt; f.life -= dt;
+    if (f.next <= 0 && f.flash < 0) { f.flash = 0; f.next = f.period * (0.8 + Math.random() * 0.5); }
+    if (f.flash >= 0) {
+      f.flash += dt; f.z += 26 * dt;
+      // a neighbour sometimes answers a moment later
+      if (f.flash < dt * 1.5 && Math.random() < 0.25) { const n = flies[(i + 1 + Math.floor(Math.random() * 4)) % flies.length]; if (n && n.flash < 0 && n.next > 0.6) n.next = 0.35 + Math.random() * 0.4; }
+      if (f.flash > 0.75) f.flash = -1;
+    }
+    if (f.life <= 0 && f.flash < 0) { flies[i] = newFly(); continue; }
+    // brightness: quick rise (0.12s), short hold, slower fade
+    const k = f.flash < 0 ? 0 : f.flash < 0.12 ? f.flash / 0.12 : f.flash < 0.22 ? 1 : Math.max(0, 1 - (f.flash - 0.22) / 0.5) ** 1.6;
+    const [gx, gy] = P(f.x, f.y), px = gx, py = gy - f.z;
+    if (f.flash >= 0) { f.trail.push([px, py]); if (f.trail.length > 7) f.trail.shift(); } else f.trail.length = 0;
+    const a = glow;
+    if (k > 0.02) {
+      // a small pool of green light on the grass below
+      const pr = 10 + (30 - Math.min(30, f.z)) * 0.3;
+      ctx.save(); ctx.translate(gx, gy); ctx.scale(1, 0.5);
+      const pg = ctx.createRadialGradient(0, 0, 0, 0, 0, pr * 1.6); pg.addColorStop(0, `rgba(170,230,70,${0.16 * k * a})`); pg.addColorStop(1, 'rgba(170,230,70,0)');
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(0, 0, pr * 1.6, 0, 7); ctx.fill(); ctx.restore();
+      // the faint streak of the swoop
+      for (let j = 0; j < f.trail.length - 1; j++) {
+        const [tx, ty] = f.trail[j], ta = (j + 1) / f.trail.length;
+        ctx.fillStyle = `rgba(200,255,90,${0.22 * ta * k * a})`; ctx.beginPath(); ctx.arc(tx, ty, 1.1 + ta, 0, 7); ctx.fill();
+      }
+      // soft halo, then the bright yellow-green lantern
+      const hg = ctx.createRadialGradient(px, py, 0, px, py, 24);
+      hg.addColorStop(0, `rgba(225,255,110,${0.9 * k * a})`); hg.addColorStop(0.18, `rgba(200,250,80,${0.45 * k * a})`); hg.addColorStop(0.5, `rgba(170,235,50,${0.12 * k * a})`); hg.addColorStop(1, 'rgba(160,230,40,0)');
+      ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(px, py, 24, 0, 7); ctx.fill();
+      ctx.fillStyle = `rgba(252,255,215,${Math.min(1, 1.2 * k) * a})`; ctx.beginPath(); ctx.arc(px, py, 2.3, 0, 7); ctx.fill();
+    } else {
+      // between flashes there's just the faintest ember
+      ctx.fillStyle = `rgba(190,240,90,${0.12 * a})`; ctx.beginPath(); ctx.arc(px, py, 1, 0, 7); ctx.fill();
+    }
+  }
+}
 function drawLighting(pt, tall) {
   const sky = skyNow(); let { c, glow } = sky;
   if (sky.rain) c = c.map((v, i) => Math.round(v * [0.74, 0.78, 0.86][i]));
@@ -722,15 +797,7 @@ function drawLighting(pt, tall) {
       gr.addColorStop(0, `rgba(255,190,90,${a * glow * flick})`); gr.addColorStop(1, 'rgba(255,170,60,0)');
       ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(gx, gy, r, 0, 7); ctx.fill();
     }
-    // fireflies drift over the farm on warm nights
-    if (glow > 0.45 && season().name !== 'Winter') {
-      for (let i = 0; i < 26; i++) {
-        const fx = 6 + hash(i * 3 + 1) * 18 + Math.sin(pt / 2300 + i * 1.7) * 1.2, fy = 6 + hash(i * 7 + 2) * 18 + Math.cos(pt / 2700 + i) * 1.2;
-        const [px, py] = P(fx, fy), blink = Math.max(0, Math.sin(pt / 420 + i * 2.3)) ** 3;
-        ctx.fillStyle = `rgba(230,255,140,${0.85 * blink * glow})`; ctx.beginPath(); ctx.arc(px, py - 16 - Math.sin(pt / 900 + i) * 6, 2.2, 0, 7); ctx.fill();
-        ctx.fillStyle = `rgba(200,255,120,${0.25 * blink * glow})`; ctx.beginPath(); ctx.arc(px, py - 16 - Math.sin(pt / 900 + i) * 6, 7, 0, 7); ctx.fill();
-      }
-    }
+    if (season().name !== 'Winter') drawFireflies(pt, sky, glow);
   }
   ctx.restore();
   if (sky.rain || sky.mist) {
