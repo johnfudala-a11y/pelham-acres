@@ -7,9 +7,9 @@ import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.20';
+export const APP_VERSION = '0.21';
 import { loadSprites } from './render.js';
-import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
+import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen } from './render.js';
 
 const $ = s => document.querySelector(s);
 const now = G.now;
@@ -22,7 +22,7 @@ function art(id, cls) {
   if (CROPS[id]) return IMG(`sprites/crop-${id}.webp`, CROPS[id].icon, cls);
   if (PRODUCTS[id]) return IMG(`sprites/icon-${id}.webp`, PRODUCTS[id].icon, cls);
   if (ANIMALS[id]) return IMG(`sprites/${id}.webp`, ANIMALS[id].icon, cls);
-  if (BUILD[id]) return IMG(BUILD_SPR.has(id) ? `sprites/${id}.webp` : `sprites/icon-${id}.webp`, BUILD[id].icon, cls);
+  if (BUILD[id]) return IMG(id === 'windmill' ? 'sprites/windmill-full.webp' : BUILD_SPR.has(id) ? `sprites/${id}.webp` : `sprites/icon-${id}.webp`, BUILD[id].icon, cls);
   return ITEMS[id]?.icon || '❔';
 }
 const ic = id => art(id);
@@ -46,9 +46,53 @@ function fmtT(ms) {
 const fmtN = n => Math.round(n).toLocaleString();
 const secs = s => fmtT(s * 1000);
 
+// ---------- juice: things fly to the HUD, counters roll, confetti ----------
+const artSrc = id => CROPS[id] ? `sprites/crop-${id}.webp` : PRODUCTS[id] ? `sprites/icon-${id}.webp` : id === 'coin' ? 'sprites/icon-coin.webp' : null;
+// send n little pictures of `id` from map tile (gx, gy) in an arc to a HUD element, then bump it
+function flyTo(gx, gy, id, target, n = 1) {
+  const src = artSrc(id), tg = $(target); if (!src || !tg) return;
+  const from = tileCenterScreen(gx, gy), r = tg.getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2;
+  for (let i = 0; i < Math.min(n, 6); i++) {
+    const im = document.createElement('img'); im.src = src; im.className = 'fly'; document.body.appendChild(im);
+    const sx = from.x + (Math.random() - 0.5) * 24, sy = from.y - 20 + (Math.random() - 0.5) * 16, mx = (sx + tx) / 2 + (Math.random() - 0.5) * 80, my = Math.min(sy, ty) - 90 - Math.random() * 40;
+    const anim = im.animate([
+      { transform: `translate(${sx - 16}px, ${sy - 16}px) scale(.6)`, opacity: 0 },
+      { transform: `translate(${sx - 16}px, ${sy - 26}px) scale(1.15)`, opacity: 1, offset: 0.12 },
+      { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1)`, opacity: 1, offset: 0.55 },
+      { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(.55)`, opacity: 0.9 }], { duration: 720 + i * 70, delay: i * 70, easing: 'cubic-bezier(.45,.05,.55,.95)' });
+    anim.onfinish = () => { im.remove(); tg.classList.remove('bump'); void tg.offsetWidth; tg.classList.add('bump'); };
+  }
+}
+// counters roll up to their new value instead of jumping
+const rolling = {};
+function rollNumber(sel, to) {
+  const el = $(sel); if (!el) return;
+  const st = rolling[sel] || (rolling[sel] = { v: to, raf: 0 });
+  if (st.v === to) { el.textContent = fmtN(to); return; }
+  const from = st.v, t0 = performance.now(), dur = Math.min(900, 250 + Math.abs(to - from) * 4);
+  cancelAnimationFrame(st.raf);
+  const step = now2 => { const k = Math.min(1, (now2 - t0) / dur), e = 1 - (1 - k) ** 3; st.v = Math.round(from + (to - from) * e); el.textContent = fmtN(st.v); if (k < 1) st.raf = requestAnimationFrame(step); else st.v = to; };
+  st.raf = requestAnimationFrame(step);
+}
+function confetti() {
+  const box = document.createElement('div'); box.className = 'confetti'; document.body.appendChild(box);
+  const cols = ['#E3A12A', '#5E9A35', '#C0472F', '#5B8FD8', '#F4B6C8', '#FFF4DA'];
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement('i'); p.style.left = Math.random() * 100 + 'vw'; p.style.background = cols[i % cols.length];
+    p.style.animationDelay = Math.random() * 0.4 + 's'; p.style.animationDuration = 1.6 + Math.random() * 1.2 + 's'; p.style.setProperty('--dx', (Math.random() - 0.5) * 200 + 'px');
+    box.appendChild(p);
+  }
+  setTimeout(() => box.remove(), 3400);
+}
+
 // ---------- toast / modal ----------
 let toastTimer;
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200); }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function toast(msg) {
+  const t = $('#toast'); t.innerHTML = paint(esc(msg));   // coins/hourglasses/stars show as painted icons
+  t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
 function modal(html) { $('#modalCard').innerHTML = paint(html); $('#modal').hidden = false; }
 function closeModal() { $('#modal').hidden = true; }
 $('#modal').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) { act(a); } else if (e.target.id === 'modal') closeModal(); });
@@ -77,8 +121,8 @@ function showLevelUps() {
   if (!levelQueue.length || !$('#modal').hidden) return;
   const L = levelQueue.shift();
   const un = unlocksAt(L);
-  sfx.levelUp();
-  modal(`<div style="font-size:54px">🎉</div><h2>Level ${L}!</h2><p class="sub">+${L * 15} 🪙 &nbsp; +2 ⏳</p>
+  sfx.levelUp(); confetti();
+  modal(`<div class="bigart">${IMG('sprites/icon-medal.webp', '🎉', 'bigimg')}<div class="medalnum">${L}</div></div><h2>Level ${L}!</h2><p class="sub">+${L * 15} 🪙 &nbsp; +2 ⏳</p>
     ${un.length ? `<b>New this level</b><div class="unlocks">${un.map(u => `<div>${u.id && (BUILD[u.id] || ITEMS[u.id]) ? art(u.id) : u.icon} ${u.name}</div>`).join('')}</div>` : '<p>Keep growing Pelham Acres!</p>'}
     <button class="btn wide" data-act="closeModal">Hooray!</button>`);
   refreshHud();
@@ -130,7 +174,7 @@ function refreshHud() {
   const need = xpFor(S.level);
   $('#xpfill').style.width = (S.xp / need * 100) + '%';
   $('#xptext').textContent = `${S.xp}/${need}`;
-  $('#coins').textContent = fmtN(S.coins);
+  rollNumber('#coins', S.coins);
   $('#hg').textContent = S.hg;
   const used = G.storageUsed(), cap = G.storageCap();
   $('#store').textContent = `${used}/${cap}`;
@@ -196,6 +240,7 @@ function confirmPlace() {
   G.pay(g.t);
   sfx.build();
   const o = G.addObj(g.t, g.x, g.y);
+  o.builtAt = Date.now();
   floater(o.x + BUILD[g.t].w / 2, o.y + BUILD[g.t].h / 2, '✨ Built!', '#FFFFFF');
   G.addXP(BUILD[g.t].kind === 'path' ? 0 : 1);
   refreshHud();
@@ -332,21 +377,21 @@ function act(el) {
 function collectProducer(o) {
   const { got, full } = G.collectJobs(o);
   if (got.length) sfx.collect();
-  got.forEach((j, i) => setTimeout(() => floater(o.x + 1, o.y + 1, `+${j.n}${em(j.out)}`), i * 150));
+  got.forEach((j, i) => setTimeout(() => { floater(o.x + 1, o.y + 1, `+${j.n}`, '#fff', j.out); flyTo(o.x + 1, o.y + 1, j.out, '[data-tb=barn]', j.n); }, i * 150));
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got.length;
 }
 function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : sfx.baa)(); }
 function collectPen(o) {
   const { got, full } = G.collectAnimals(o);
-  if (got) { sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}${em(G.penAnimal(o).product)}`); }
+  if (got) { const pr = G.penAnimal(o).product; sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}`, '#fff', pr); flyTo(o.x + 1, o.y + 1, pr, '[data-tb=barn]', got); }
   if (o.animals.length) animalSound(o);
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got;
 }
 function collectHouse(o) {
   const c = G.collectRent(o);
-  if (c) { sfx.coin(); floater(o.x + 1, o.y + 1, `+${c}🪙`, '#FFE9A8'); }
+  if (c) { sfx.coin(); floater(o.x + 1, o.y + 1, `+${c}`, '#FFE9A8', 'coin'); flyTo(o.x + 1, o.y + 1, 'coin', '#coins', 4); }
   return c;
 }
 
@@ -396,6 +441,7 @@ function tapObject(o) {
   if (o.cat) return petCat(o.cat);
   if (o.person) return talkTo(o.person);
   const b = BUILD[o.t];
+  if (b.kind !== 'field') Object.defineProperty(o, '_squish', { value: performance.now(), writable: true, configurable: true, enumerable: false }); // (not saved)
   switch (b.kind) {
     case 'field':
       if (!o.crop) return openSheet('Plant a crop', () => cropPicker(), o);
@@ -414,7 +460,7 @@ function harvestField(o) {
   const c = o.crop, r = G.harvest(o);
   if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
   if (r) sfx.harvest();
-  if (r) floater(o.x + 0.5, o.y + 0.5, `+${r.n}${CROPS[c].icon}`, r.n > CROP_YIELD ? '#FFE9A8' : '#fff');
+  if (r) { floater(o.x + 0.5, o.y + 0.5, `+${r.n}`, r.n > CROP_YIELD ? '#FFE9A8' : '#fff', c); flyTo(o.x + 0.5, o.y + 0.5, c, '[data-tb=barn]', 2); }
   if (r) { const k = E.rollKeepsake('harvest'); if (k) setTimeout(() => foundKeepsake(k), 500); }
   return !!r;
 }

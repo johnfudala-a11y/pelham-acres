@@ -43,7 +43,7 @@ export function initAudio(settings) {
       const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);
     }
     if (ctx.state !== 'running') { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
-    if (!state.started) { state.started = true; startMusic(); }
+    if (!state.started) { state.started = true; startMusic(); startAmbience(); }
   };
   // Safari only allows audio to start on "activation" events (touchend / click / pointerup), not touchstart.
   for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
@@ -99,19 +99,23 @@ let lastSfx = {};
 function throttle(name, ms) { const n = performance.now(); if (n - (lastSfx[name] || 0) < ms) return true; lastSfx[name] = n; return false; }
 
 export const sfx = {
-  tap()     { if (!ok() || throttle('tap', 40)) return; tone(900, T(), { type: 'sine', dur: 0.05, vol: 0.12, slideTo: 600 }); },
-  open()    { if (!ok()) return; const t = T(); tone(520, t, { type: 'sine', dur: 0.08, vol: 0.12 }); tone(780, t + 0.05, { type: 'sine', dur: 0.1, vol: 0.1 }); },
-  close()   { if (!ok()) return; const t = T(); tone(700, t, { type: 'sine', dur: 0.08, vol: 0.1 }); tone(470, t + 0.05, { type: 'sine', dur: 0.1, vol: 0.08 }); },
+  // a soft wooden click
+  tap()     { if (!ok() || throttle('tap', 40)) return; const t = T(); noise(t, { dur: 0.025, vol: 0.16, freq: 1900, q: 6 }); tone(420, t, { type: 'sine', dur: 0.04, vol: 0.1, slideTo: 300 }); },
+  // paper rustle plus a little chime (open), and a gentle tok (close)
+  open()    { if (!ok()) return; const t = T(); noise(t, { dur: 0.12, vol: 0.07, type: 'highpass', freq: 3500 }); bell(88, t + 0.03, 0.05); },
+  close()   { if (!ok()) return; const t = T(); noise(t, { dur: 0.08, vol: 0.06, type: 'highpass', freq: 3000 }); tone(330, t + 0.02, { type: 'sine', dur: 0.06, vol: 0.09, slideTo: 250 }); },
   plant()   { if (!ok() || throttle('plant', 60)) return; const t = T(); noise(t, { dur: 0.08, vol: 0.18, type: 'lowpass', freq: 500 }); tone(220, t, { type: 'sine', dur: 0.1, vol: 0.2, slideTo: 140 }); },
   harvest() { if (!ok() || throttle('harvest', 70)) return; const t = T(), base = 72 + [0, 2, 4, 7, 9][Math.floor(Math.random() * 5)]; noise(t, { dur: 0.06, vol: 0.12, freq: 3000, q: 0.7 }); pluck(base, t + 0.01, 0.2); pluck(base + 7, t + 0.07, 0.14); },
-  coin()    { if (!ok() || throttle('coin', 60)) return; const t = T(); tone(mtof(88), t, { type: 'square', dur: 0.08, vol: 0.06, filter: 4000 }); tone(mtof(93), t + 0.07, { type: 'square', dur: 0.25, vol: 0.06, filter: 4000 }); },
+  // two bright little bell tones, like coins landing in a jar
+  coin()    { if (!ok() || throttle('coin', 60)) return; const t = T(); bell(91, t, 0.07); bell(96, t + 0.07, 0.06); noise(t + 0.07, { dur: 0.04, vol: 0.05, freq: 6000, q: 3 }); },
   collect() { if (!ok() || throttle('collect', 80)) return; const t = T(); [76, 79, 84].forEach((m, i) => pluck(m, t + i * 0.06, 0.16)); },
   make()    { if (!ok()) return; const t = T(); for (let i = 0; i < 3; i++) noise(t + i * 0.07, { dur: 0.05, vol: 0.1, freq: 900 + i * 200, q: 4 }); tone(330, t, { type: 'triangle', dur: 0.2, vol: 0.1, slideTo: 440 }); },
   build()   { if (!ok()) return; const t = T(); [0, 0.12, 0.24].forEach((d, i) => { noise(t + d, { dur: 0.07, vol: 0.25, freq: 700 - i * 80, q: 3 }); tone(180 - i * 15, t + d, { type: 'sine', dur: 0.08, vol: 0.2 }); }); pluck(79, t + 0.36, 0.15); pluck(84, t + 0.44, 0.15); },
   clear()   { if (!ok()) return; const t = T(); noise(t, { dur: 0.25, vol: 0.25, type: 'lowpass', freq: 2000, freqTo: 300 }); noise(t + 0.18, { dur: 0.3, vol: 0.18, type: 'lowpass', freq: 600, freqTo: 150 }); },
   deliver() { if (!ok()) return; const t = T(); [72, 76, 79, 84].forEach((m, i) => pluck(m, t + i * 0.08, 0.17)); this.coin(); },
   levelUp() { if (!ok()) return; const t = T(); [60, 64, 67, 72, 76, 79, 84].forEach((m, i) => pluck(m, t + i * 0.09, 0.18, sfxBus, 0.5)); [72, 76, 79].forEach(m => tone(mtof(m), t + 0.7, { type: 'triangle', dur: 1.2, vol: 0.08, attack: 0.05 })); },
-  error()   { if (!ok() || throttle('error', 300)) return; const t = T(); tone(180, t, { type: 'square', dur: 0.12, vol: 0.06, filter: 900 }); tone(150, t + 0.13, { type: 'square', dur: 0.16, vol: 0.06, filter: 900 }); },
+  // a soft, friendly "bonk" rather than a buzzer
+  error()   { if (!ok() || throttle('error', 300)) return; const t = T(); tone(240, t, { type: 'sine', dur: 0.14, vol: 0.18, slideTo: 170 }); noise(t, { dur: 0.05, vol: 0.06, type: 'lowpass', freq: 600 }); },
   hourglass() { if (!ok()) return; const t = T(); for (let i = 0; i < 8; i++) tone(mtof(84 + i * 2), t + i * 0.035, { type: 'sine', dur: 0.08, vol: 0.08 }); },
   // farm animals
   cluck()   { if (!ok() || throttle('animal', 400)) return; const t = T(); [0, 0.11].forEach(d => tone(600, t + d, { type: 'sawtooth', dur: 0.07, vol: 0.06, slideTo: 380, filter: 1800 })); },
@@ -127,6 +131,33 @@ export const sfx = {
               s.start(t); am.start(t); s.stop(t + 1.7); am.stop(t + 1.7); },
   zoomies() { if (!ok()) return; const t = T(); for (let i = 0; i < 5; i++) tone(500 + i * 120, t + i * 0.06, { type: 'sine', dur: 0.05, vol: 0.08, slideTo: 900 + i * 150 }); meow(t + 0.35, false); },
 };
+// a small bell: a few inharmonic sine partials that ring and fade
+function bell(m, t, vol = 0.08, bus = sfxBus) {
+  const f = mtof(m);
+  [[1, 1, 0.5], [2.76, 0.4, 0.3], [5.4, 0.18, 0.18]].forEach(([r, v, d]) => tone(f * r, t, { type: 'sine', dur: d, vol: vol * v, attack: 0.002, bus }));
+}
+
+// ---------- ambience: birdsong by day, crickets at night (very quiet, follows the device clock) ----------
+let ambBus = null, ambTimer = null;
+function ambience() {
+  if (!ctx || ctx.state !== 'running' || !state.sfx) return;
+  if (!ambBus) { ambBus = ctx.createGain(); ambBus.gain.value = 0.35; ambBus.connect(master); }
+  const h = new Date().getHours() + new Date().getMinutes() / 60, t = ctx.currentTime + 0.05;
+  if (h >= 6 && h < 19.5) {
+    if (Math.random() < 0.45) {   // a little songbird phrase: 2-5 quick rising/falling chirps
+      const base = 2200 + Math.random() * 1400, n = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < n; i++) tone(base * (1 + (Math.random() - 0.5) * 0.25), t + i * 0.11, { type: 'sine', dur: 0.06, vol: 0.05, attack: 0.004, slideTo: base * (Math.random() < 0.5 ? 1.35 : 0.75), bus: ambBus });
+    }
+  } else if (h >= 20.5 || h < 5) {
+    for (let i = 0; i < 3; i++) {   // crickets: short pulsed chirps
+      const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 4600; f.Q.value = 18;
+      const g = ctx.createGain(); s.connect(f); f.connect(g); g.connect(ambBus);
+      const st = t + i * 0.09; env(g, st, 0.005, 0.22, 0.05); s.start(st, Math.random() * 0.5); s.stop(st + 0.08);
+    }
+  }
+}
+function startAmbience() { if (!ambTimer) ambTimer = setInterval(ambience, 3200); }
+
 function meow(t, big) {
   // cat-like vowel: sawtooth through two moving formant filters
   const o = ctx.createOscillator(); o.type = 'sawtooth';

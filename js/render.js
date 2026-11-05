@@ -12,16 +12,18 @@ export const SPRITES = {};
 const SPRITE_CFG = {
   // every picture fits inside its own ground space (k <= 1), so neighbours never overlap side-to-side
   // iso: painted at the grid's isometric angle, so the picture's bottom corner sits on the footprint's front corner
+  // (windmill: body only; its sails are drawn turning on top)
   barn: { k: 1, iso: 1 }, feedMill: { k: 1, iso: 1 }, bakery: { k: 1, iso: 1 }, workshop: { k: 1, iso: 1 }, dairy: { k: 1, iso: 1 }, sugarMill: { k: 1, iso: 1 },
   kitchen: { k: 1, iso: 1 }, loom: { k: 1, iso: 1 }, cafe: { k: 1, iso: 1 },
   cottage: { k: 1, iso: 1 }, farmhouse: { k: 1, iso: 1 }, townhouse: { k: 0.85, iso: 1 }, manor: { k: 1, iso: 1 },
   townHall: { k: 1, iso: 1 }, generalStore: { k: 1, iso: 1 }, schoolhouse: { k: 1, iso: 1 }, clockTower: { k: 0.62, iso: 1 }, bandstand: { k: 1, iso: 1 }, station: { k: 1, iso: 1 },
-  flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 1, iso: 1 }, fountain: { k: 1, iso: 1 }, windmill: { k: 0.9, iso: 1 },
+  flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 1, iso: 1 }, fountain: { k: 1, iso: 1 }, windmill: { k: 0.55, iso: 1 },
 };
 const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
   'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'ollie-w1', 'ollie-w2', 'milo-r1', 'milo-r2', 'milo-sit','p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
   'soil', 'sprout', 'growing', ...Object.keys(CROPS).map(c => 'crop-' + c),
-  ...['joe', 'dottie', 'tom', 'rosa', 'finch', 'ellis'].flatMap(id => ['p-' + id + '-w1', 'p-' + id + '-w2'])];
+  'tex-grass', 'tex-forest', 'windmill-sails', ...['buttercup', 'violet', 'clover', 'pebbles', 'mushroom', 'dirt', 'dandelion', 'log', 'shrub', 'duck', 'mallard', 'butterfly1', 'butterfly2', 'bird'].map(n => 'dc-' + n),
+  ...['hattie', 'joe', 'dottie', 'tom', 'rosa', 'finch', 'ellis'].flatMap(id => ['p-' + id + '-w1', 'p-' + id + '-w2'])];
 export function loadSprites() {
   const load = (n, tries) => {
     const im = new Image();
@@ -78,7 +80,12 @@ export function clampCam() {
   cam.x = Math.max(-lx, Math.min(lx, cam.x));
   cam.y = Math.max(-ly, Math.min(0, cam.y));
 }
-export function floater(gx, gy, text, color = '#fff') { const [px, py] = P(gx, gy); view.floaters.push({ px, py, text, color, t0: performance.now() }); }
+// a "+3" that floats up and fades; `item` adds its painted picture beside the number
+export function floater(gx, gy, text, color = '#fff', item) {
+  const [px, py] = P(gx, gy);
+  const icon = item ? (item === 'coin' ? 'icon-coin' : CROPS[item] ? 'crop-' + item : 'icon-' + item) : null;
+  view.floaters.push({ px, py, text, color, icon, t0: performance.now() });
+}
 
 // ---------- color helpers ----------
 function shade(hex, amt) {
@@ -169,14 +176,21 @@ function drawField(o, t) {
     const p = Math.min(1, (t - o.start) / Math.max(1, o.end - o.start));
     const ripe = p >= 1 && spr('crop-' + o.crop);
     // plants stand on the middle of their own plot
+    // a breeze ripples across the fields: each plant leans with the wave as it passes
+    const lean = Math.sin(t / 900 - (o.x + o.y) * 0.55) * 0.07 + Math.sin(t / 2300 + o.id) * 0.02;
     if (ripe) {
-      const sway = Math.sin(t / 700 + o.id) * 0.6;
-      drawSprite(ripe, cx + sway, cy + 9, 46, (o.id & 1) === 1, true);
+      ctx.save(); ctx.translate(cx, cy + 9); ctx.transform(1, 0, -lean, 1, 0, 0);
+      drawSprite(ripe, 0, 0, 46, (o.id & 1) === 1, true);
+      ctx.restore();
       if (((t / 900 + o.id) % 3) < 0.25) { ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(cx + 12, cy - 22, 2.2, 0, 7); ctx.fill(); }
       return;
     }
     const stage = spr(p < 0.4 ? 'sprout' : 'growing');
-    if (stage) { const w = p < 0.4 ? 26 + p * 15 : 32 + p * 10; drawSprite(stage, cx, cy + 7, w, (o.id & 1) === 1, true); return; }
+    if (stage) {
+      const w = p < 0.4 ? 26 + p * 15 : 32 + p * 10;
+      ctx.save(); ctx.translate(cx, cy + 7); ctx.transform(1, 0, -lean * 0.7, 1, 0, 0); drawSprite(stage, 0, 0, w, (o.id & 1) === 1, true); ctx.restore();
+      return;
+    }
   }
   const pts = diamond(o.x, o.y, 1, 1, 2);
   poly(pts, '#8A5A2E', 'rgba(60,35,15,.4)');
@@ -541,6 +555,164 @@ function drawStatus(o, b, t) {
 
 // ---------- main draw ----------
 let drawList = [];
+// ---------- ambient life: chimney smoke, sparkling water, ducks, butterflies, birds ----------
+const SMOKE = { cottage: [0.18, 0.86], farmhouse: [0.2, 0.88], townhouse: [0.12, 0.9], manor: [0.22, 0.86], bakery: [0.16, 0.9], kitchen: [0.18, 0.88], cafe: [0.15, 0.88], workshop: [0.2, 0.86], schoolhouse: [0.05, 0.9] };
+function spriteBox(o) {   // where an isometric building's picture sits: centre x, bottom y, width, height
+  const b = BUILD[o.t], cfg = SPRITE_CFG[o.t], im = cfg && spr(o.t); if (!im) return null;
+  const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1] + 3, w = footW(b) * cfg.k;
+  return { cx, by, w, h: w * im.naturalHeight / im.naturalWidth };
+}
+function drawLife(pt, tall, vis) {
+  const night = skyNow().glow > 0.5;
+  for (const o of tall) {
+    const sm = SMOKE[o.t];
+    if (sm) {   // soft puffs curling up from the chimney
+      const bx = spriteBox(o); if (!bx) continue;
+      const x0 = bx.cx + bx.w * sm[0], y0 = bx.by - bx.h * sm[1];
+      for (let i = 0; i < 5; i++) {
+        const k = ((pt / 2600 + i / 5 + o.id * 0.37) % 1);
+        ctx.fillStyle = `rgba(240,238,232,${0.42 * (1 - k)})`;
+        ctx.beginPath(); ctx.arc(x0 + Math.sin(k * 5 + o.id) * 4 + k * 10, y0 - k * 38, 3 + k * 7, 0, 7); ctx.fill();
+      }
+    }
+    if (o.t === 'pond' || o.t === 'fountain') {   // twinkles on the water
+      const [cx, cy] = P(o.x + 1, o.y + 1);
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      for (let i = 0; i < 6; i++) {
+        const tw = Math.max(0, Math.sin(pt / 380 + i * 2.1 + o.id)); if (tw < 0.6) continue;
+        star(cx + (hash(o.id * 9 + i) - 0.5) * 50, cy - 6 + (hash(o.id * 5 + i) - 0.5) * 20 - (o.t === 'fountain' ? 10 : 0), 2.5 * tw);
+      }
+      if (o.t === 'pond') {   // two ducks paddling in slow circles
+        for (let i = 0; i < 2; i++) {
+          const im = spr(i ? 'dc-mallard' : 'dc-duck'); if (!im) continue;
+          const a = pt / 9000 + i * Math.PI, dx = Math.cos(a) * 18, dy = Math.sin(a) * 7;
+          ctx.save(); ctx.translate(cx + dx, cy - 2 + dy + Math.sin(pt / 500 + i) * 0.8);
+          if (Math.sin(a) < 0) ctx.scale(-1, 1);   // face the way it's paddling
+          ctx.drawImage(im, -9, -11, 18, 18 * im.naturalHeight / im.naturalWidth); ctx.restore();
+        }
+      }
+    }
+  }
+  if (night) return;
+  // butterflies flit around flower beds and the middle of the farm
+  const spots = tall.filter(o => o.t === 'flowers').slice(0, 6).map(o => [o.x + 0.5, o.y + 0.5]).concat([[13, 13], [17, 16]]);
+  spots.forEach(([gx, gy], i) => {
+    const im = spr(i % 2 ? 'dc-butterfly2' : 'dc-butterfly1'); if (!im) return;
+    const tt = pt / 1000 + i * 7, fx = gx + Math.sin(tt * 0.7) * 0.9 + Math.sin(tt * 1.9) * 0.3, fy = gy + Math.cos(tt * 0.5) * 0.7;
+    const [px, py] = P(fx, fy), flap = 0.35 + Math.abs(Math.sin(pt / 70 + i)) * 0.65;
+    ctx.save(); ctx.translate(px, py - 26 - Math.sin(tt * 2.3) * 6); ctx.rotate(Math.sin(tt) * 0.4); ctx.scale(flap, 1);
+    ctx.drawImage(im, -6, -5, 12, 12 * im.naturalHeight / im.naturalWidth); ctx.restore();
+  });
+  // now and then a pair of songbirds crosses the sky
+  const cyc = 26000, k = (pt % cyc) / 7000, bim = spr('dc-bird');
+  if (k < 1 && bim) {
+    ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const seed = Math.floor(pt / cyc);
+    for (let i = 0; i < 2; i++) {
+      const x = -60 + k * (W + 120) + i * 30, y = H * (0.15 + hash(seed) * 0.25) + Math.sin(k * 9 + i) * 10 + i * 18;
+      const flap = 0.4 + Math.abs(Math.sin(pt / 110 + i * 1.3)) * 0.6;
+      ctx.save(); ctx.translate(x, y); ctx.scale(1, flap); ctx.drawImage(bim, -11, -9, 22, 22 * bim.naturalHeight / bim.naturalWidth); ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+// ---------- time of day & weather (from the device clock) ----------
+// keyframes: hour -> colour the scene is multiplied by
+const SKY = [[0, [92, 104, 168]], [4.8, [92, 104, 168]], [6.2, [255, 196, 168]], [7.6, [255, 246, 232]], [8.5, [255, 255, 255]],
+  [16.8, [255, 255, 255]], [18.2, [255, 222, 172]], [19.4, [236, 168, 160]], [20.6, [124, 118, 176]], [21.4, [92, 104, 168]], [24, [92, 104, 168]]];
+const localHour = () => { if (view.debugHour != null) return view.debugHour; const d = new Date(); return d.getHours() + d.getMinutes() / 60; };
+export function skyNow() {
+  const h = localHour(); let i = 0; while (i < SKY.length - 2 && SKY[i + 1][0] <= h) i++;
+  const [h0, c0] = SKY[i], [h1, c1] = SKY[i + 1], k = (h - h0) / (h1 - h0 || 1);
+  const c = c0.map((v, j) => Math.round(v + (c1[j] - v) * k));
+  const glow = Math.max(0, Math.min(1, (215 - (c[0] + c[1] + c[2]) / 3) / 80));   // how dark it is -> how much lights show
+  // weather: some mornings are rainy or misty (same for everyone on a given day)
+  const day = Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 864e5), r = hash(day * 7919 + 3);
+  const winter = season().name === 'Winter';
+  const rain = view.debugRain ?? (!winter && r < 0.18 && h >= 6 && h < 11.5);
+  const mist = !rain && r >= 0.18 && r < 0.36 && h >= 5 && h < 9.5;
+  return { h, c, glow, rain, mist };
+}
+function drawLighting(pt, tall) {
+  const sky = skyNow(); let { c, glow } = sky;
+  if (sky.rain) c = c.map((v, i) => Math.round(v * [0.74, 0.78, 0.86][i]));
+  ctx.save();
+  if (c[0] < 254 || c[1] < 254 || c[2] < 254) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(0, 0, W, H);
+    ctx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * (W / 2 + cam.x), dpr * (H / 2 + cam.y));
+  }
+  if (glow > 0.12) {
+    // warm light from lamp posts and windows
+    ctx.globalCompositeOperation = 'lighter';
+    for (const o of tall) {
+      const b = BUILD[o.t]; let gx, gy, r, a;
+      if (o.t === 'lamp') { [gx, gy] = P(o.x + 0.5, o.y + 0.5); gy -= 36; r = 46; a = 0.5; }
+      else if (['house', 'producer', 'civic', 'station', 'storage'].includes(b.kind)) { [gx, gy] = P(o.x + b.w / 2 + 0.3, o.y + b.h / 2 + 0.3); gy -= 14; r = footW(b) * 0.42; a = 0.28; }
+      else continue;
+      const flick = 0.92 + Math.sin(pt / 170 + o.id * 3) * 0.05;
+      const gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+      gr.addColorStop(0, `rgba(255,190,90,${a * glow * flick})`); gr.addColorStop(1, 'rgba(255,170,60,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(gx, gy, r, 0, 7); ctx.fill();
+    }
+    // fireflies drift over the farm on warm nights
+    if (glow > 0.45 && season().name !== 'Winter') {
+      for (let i = 0; i < 26; i++) {
+        const fx = 6 + hash(i * 3 + 1) * 18 + Math.sin(pt / 2300 + i * 1.7) * 1.2, fy = 6 + hash(i * 7 + 2) * 18 + Math.cos(pt / 2700 + i) * 1.2;
+        const [px, py] = P(fx, fy), blink = Math.max(0, Math.sin(pt / 420 + i * 2.3)) ** 3;
+        ctx.fillStyle = `rgba(230,255,140,${0.85 * blink * glow})`; ctx.beginPath(); ctx.arc(px, py - 16 - Math.sin(pt / 900 + i) * 6, 2.2, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(200,255,120,${0.25 * blink * glow})`; ctx.beginPath(); ctx.arc(px, py - 16 - Math.sin(pt / 900 + i) * 6, 7, 0, 7); ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+  if (sky.rain || sky.mist) {
+    ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (sky.rain) {
+      ctx.fillStyle = 'rgba(70,85,105,.12)'; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(225,235,250,.75)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let i = 0; i < 160; i++) {
+        const x = (hash(i * 13) * (W + 100) + pt * 0.18) % (W + 100) - 50, y = (hash(i * 29 + 7) * (H + 60) + pt * (0.9 + hash(i) * 0.4)) % (H + 60) - 30;
+        ctx.moveTo(x, y); ctx.lineTo(x - 7, y + 22);
+      }
+      ctx.stroke();
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const y = H * (0.25 + i * 0.15), x = ((pt / 90 + i * 400) % (W + 600)) - 300;
+        const gr = ctx.createRadialGradient(x, y, 0, x, y, 340); gr.addColorStop(0, 'rgba(250,250,245,.22)'); gr.addColorStop(1, 'rgba(250,250,245,0)');
+        ctx.fillStyle = gr; ctx.fillRect(x - 340, y - 340, 680, 680);
+      }
+      ctx.fillStyle = 'rgba(245,245,240,.12)'; ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+  }
+}
+// repeating painted textures, scaled in world space
+const _pats = {};
+function pat(name, scale) {
+  if (_pats[name]) return _pats[name];
+  const im = spr(name); if (!im) return null;
+  const p = ctx.createPattern(im, 'repeat');
+  if (p.setTransform) p.setTransform(new DOMMatrix().scale(scale));
+  return (_pats[name] = p);
+}
+// little painted details scattered on empty ground: wildflowers, clover, pebbles, mushrooms...
+const DECALS = ['buttercup', 'violet', 'clover', 'pebbles', 'mushroom', 'dirt', 'dandelion', 'log', 'shrub'];
+const WINTER_OK = new Set(['pebbles', 'log', 'shrub', 'dirt']);
+let gridAt = () => null;
+function drawDecals(vis, se) {
+  for (let gy = 1; gy < MAP - 1; gy++) for (let gx = 1; gx < MAP - 1; gx++) {
+    const h = hash(gx * 131 + gy * 977); if (h > 0.13) continue;
+    const name = DECALS[Math.floor(hash(gx * 7 + gy * 3 + 5) * DECALS.length)];
+    if (se.name === 'Winter' && !WINTER_OK.has(name)) continue;
+    if (gridAt(gx, gy)) continue;
+    const ox = hash(gx + gy * 31) * 0.5 + 0.25, oy = hash(gx * 17 + gy) * 0.5 + 0.25;
+    const [cx, cy] = P(gx + ox, gy + oy); if (!vis(cx, cy)) continue;
+    const im = spr('dc-' + name); if (!im) continue;
+    const w = (name === 'log' || name === 'shrub' ? 30 : name === 'dirt' ? 34 : 20) * (0.8 + h * 2);
+    drawSprite(im, cx, cy + 4, w, h < 0.06, true);
+  }
+}
 let _ground = null;
 function groundPaths() {
   if (_ground) return _ground;
@@ -560,15 +732,36 @@ export function draw() {
   ctx.fillStyle = se.bg; ctx.fillRect(0, 0, W, H);
   ctx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * (W / 2 + cam.x), dpr * (H / 2 + cam.y));
   ctx.imageSmoothingQuality = 'high';
+  // world-space rectangle covering the whole screen (for the forest beyond the farm)
+  const wx0 = (-W / 2 - cam.x) / cam.z, wy0 = (-H / 2 - cam.y) / cam.z, ww = W / cam.z, wh = H / cam.z;
+  const forest = pat('tex-forest', 2.2);
+  if (forest) {
+    ctx.fillStyle = forest; ctx.fillRect(wx0, wy0, ww, wh);
+    ctx.fillStyle = se.name === 'Winter' ? 'rgba(235,242,248,.5)' : se.name === 'Fall' ? 'rgba(170,110,40,.28)' : 'rgba(20,40,10,.18)';
+    ctx.fillRect(wx0, wy0, ww, wh);
+  }
 
   const margin = 80, z = cam.z;
   const vis = (px, py) => { const sx = px * z + W / 2 + cam.x, sy = py * z + H / 2 + cam.y; return sx > -margin * z && sx < W + margin * z && sy > -margin * z * 2 && sy < H + margin * z * 2; };
 
   // ground: the checkerboard is two pre-built shapes (2 fills instead of 900 tiles every frame)
-  const GP = groundPaths();
-  ctx.fillStyle = se.ground[0]; ctx.fill(GP.even);
-  ctx.fillStyle = se.ground[1]; ctx.fill(GP.odd);
-  ctx.strokeStyle = 'rgba(0,0,0,0.025)'; ctx.lineWidth = 1; ctx.stroke(GP.lines);
+  const GP = groundPaths(), grass = pat('tex-grass', 0.55);
+  if (grass) {
+    // painted meadow over the whole farm, tinted for the season
+    const map = new Path2D(); const d = diamond(0, 0, MAP, MAP); map.moveTo(...d[0]); for (let i = 1; i < 4; i++) map.lineTo(...d[i]); map.closePath();
+    ctx.fillStyle = grass; ctx.fill(map);
+    const tint = { Spring: 'rgba(190,240,140,.14)', Summer: 'rgba(255,240,170,.06)', Fall: 'rgba(205,150,60,.26)', Winter: 'rgba(240,246,252,.62)' }[se.name];
+    if (tint) { ctx.fillStyle = tint; ctx.fill(map); }
+    // soft shadow where the farm meets the forest
+    ctx.save(); ctx.clip(map); ctx.strokeStyle = 'rgba(20,35,10,.28)'; ctx.lineWidth = 26; ctx.stroke(map); ctx.lineWidth = 10; ctx.stroke(map); ctx.restore();
+    drawDecals(vis, se);
+    // the tile grid only shows while you're placing something or planting
+    if (view.ghost || view.plantCrop) { ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1; ctx.stroke(GP.even); ctx.stroke(GP.odd); }
+  } else {
+    ctx.fillStyle = se.ground[0]; ctx.fill(GP.even);
+    ctx.fillStyle = se.ground[1]; ctx.fill(GP.odd);
+    ctx.strokeStyle = 'rgba(0,0,0,0.025)'; ctx.lineWidth = 1; ctx.stroke(GP.lines);
+  }
   // map edge
   ctx.strokeStyle = 'rgba(40,70,25,.5)'; ctx.lineWidth = 3; poly(diamond(0, 0, MAP, MAP), null, null); ctx.stroke();
 
@@ -601,6 +794,8 @@ export function draw() {
   }
   while (ci < catQ.length) drawW(catQ[ci++]);
   if (g) { ctx.globalAlpha = 0.75; drawObj({ ...g.proto, x: g.x, y: g.y }, t); ctx.globalAlpha = 1; }
+  drawLife(pt, tall, vis);
+  drawLighting(pt, tall);
   for (const o of tall) drawStatus(o, BUILD[o.t], t);
   drawList = [...flat, ...tall];
 
@@ -610,9 +805,15 @@ export function draw() {
   for (const f of view.floaters) {
     const k = (pt - f.t0) / 1300;
     ctx.globalAlpha = 1 - k * k;
-    ctx.font = `bold 15px -apple-system,system-ui,sans-serif, ${EMOJI}`; ctx.textAlign = 'center';
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(40,25,10,.7)';
-    ctx.strokeText(f.text, f.px, f.py - 30 - k * 36); ctx.fillStyle = f.color; ctx.fillText(f.text, f.px, f.py - 30 - k * 36);
+    const pop = k < 0.15 ? 0.7 + k / 0.15 * 0.45 : k < 0.3 ? 1.15 - (k - 0.15) / 0.15 * 0.15 : 1;   // a little pop as it appears
+    ctx.save(); ctx.translate(f.px, f.py - 30 - k * 36); ctx.scale(pop, pop);
+    ctx.font = `800 16px "Fredoka", -apple-system, system-ui, sans-serif, ${EMOJI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const im = f.icon && (ICONS[f.icon] || (ICONS[f.icon] = Object.assign(new Image(), { src: 'sprites/' + f.icon + '.webp' })));
+    const hasIm = im && im.complete && im.naturalWidth, tw = ctx.measureText(f.text).width, off = hasIm ? -10 : 0;
+    ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(60,35,15,.75)'; ctx.lineJoin = 'round';
+    ctx.strokeText(f.text, off, 0); ctx.fillStyle = f.color; ctx.fillText(f.text, off, 0);
+    if (hasIm) ctx.drawImage(im, off + tw / 2 + 1, -11, 22, 22);
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
   ctx.restore();
@@ -644,7 +845,9 @@ function drawObj(o, t) {
     if (cfg.iso) {
       // contact shadow along the footprint, then the building with its front corner on the footprint's front corner
       poly(diamond(o.x, o.y, b.w, b.h), 'rgba(40,30,10,.18)');
-      drawSprite(sp, cx, by + 3 + (cfg.dy || 0), footW(b) * cfg.k, false, true);
+      const sw = footW(b) * cfg.k * squishOf(o), sh = drawSprite(sp, cx, by + 3 + (cfg.dy || 0), sw, false, true);
+      if (o.t === 'windmill') drawSails(cx - sw / 2 + sw * 0.27, by + 3 - sh + sh * 0.31, footW(b) * 0.62, t);
+      buildFx(o, b, cx, by, sh);
     } else drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, false, lot);
     if (b.kind === 'station') drawTrain(o, b, t);
     if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
@@ -663,6 +866,36 @@ function drawObj(o, t) {
       if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
   }
 }
+// windmill sails: turn slowly on the hub, in a plane facing down-left (toward the viewer's left)
+function drawSails(hx, hy, size, t) {
+  const im = spr('windmill-sails'); if (!im) return;
+  ctx.save(); ctx.translate(hx, hy);
+  ctx.transform(0.62, 0.28, 0, 1, 0, 0);          // foreshorten into the isometric plane
+  ctx.rotate(t / 2600);
+  const h = size * im.naturalHeight / im.naturalWidth;
+  ctx.drawImage(im, -size / 2, -h / 2, size, h);
+  ctx.restore();
+}
+// a gentle squish when you tap a building
+export function squishOf(o) {
+  const s = o._squish; if (!s) return 1;
+  const k = (performance.now() - s) / 380; if (k >= 1) { o._squish = 0; return 1; }
+  return 1 + Math.sin(k * Math.PI) * 0.06 * (1 - k);
+}
+// just built: rises from the ground with a dust puff and sparkles (o.builtAt set when placed)
+function buildFx(o, b, cx, by, sh) {
+  const k = o.builtAt ? (Date.now() - o.builtAt) / 1400 : 2; if (k >= 1) return;
+  ctx.save();
+  for (let i = 0; i < 10; i++) {   // dust puffs rolling outward
+    const a = i / 10 * Math.PI * 2, r = 20 + k * footW(b) * 0.55, py = by - 4 + Math.sin(a) * r * 0.45;
+    ctx.globalAlpha = (1 - k) * 0.55; ctx.fillStyle = '#E8DCC2';
+    ctx.beginPath(); ctx.arc(cx + Math.cos(a) * r, py, 6 + k * 10, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1 - k; ctx.fillStyle = '#FFF4C2';
+  for (let i = 0; i < 8; i++) { const a = hash(o.id * 13 + i) * 7, r = 10 + hash(i + o.id) * footW(b) * 0.4; star(cx + Math.cos(a) * r, by - sh * (0.3 + hash(i * 5) * 0.6) - k * 20, 3 + (1 - k) * 3); }
+  ctx.restore();
+}
+function star(x, y, r) { ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? r * 0.4 : r; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } ctx.closePath(); ctx.fill(); }
 // A packed-earth lot exactly on the building's grid squares, so it reads as standing on its tiles.
 function drawLot(o, b) {
   poly(diamond(o.x, o.y, b.w, b.h, 1), 'rgba(122,96,54,.55)');
@@ -700,7 +933,7 @@ export const cats = [
 ];
 let lastCatT = 0;
 let catFavorite = () => null; // optional: returns a favorite spot {x,y} for a cat
-export function setCatGrid(fn, fav) { setNavGrid(fn); if (fav) catFavorite = fav; }
+export function setCatGrid(fn, fav) { setNavGrid(fn); gridAt = fn; if (fav) catFavorite = fav; }
 export function catGo(c, far) {
   const fav = !far && catFavorite(c);
   if (fav && Math.random() < 0.7 && planTo(c, Math.floor(fav.x), Math.floor(fav.y), true)) return;
