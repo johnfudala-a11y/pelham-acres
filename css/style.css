@@ -175,6 +175,29 @@ h3.soon { color: var(--muted); }
 .stars { color: #D9971C; font-size: 14px; letter-spacing: 1px; }
 .upg { background: #FBEBC6; border: 2px solid #E2C27E; border-radius: 14px; padding: 10px 12px; }
 
+/* ---------- Animal pens ---------- */
+.penloop { display: flex; align-items: center; justify-content: space-around; gap: 4px; background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 8px; margin-bottom: 10px; }
+.penloop .pl { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 70px; }
+.penloop .plart { height: 44px; width: auto; filter: drop-shadow(0 2px 1px rgba(60,30,10,.25)); }
+.penloop b { font-size: 16px; line-height: 1.1; }
+.penloop small { font-size: 11px; color: var(--muted); font-weight: 600; }
+.penloop .arrow { font-size: 20px; color: var(--edge); font-weight: 800; }
+.lowfeed { display: flex; align-items: center; gap: 8px; background: #FBE6DC; border: 2px solid #E3A99A; border-radius: 12px; padding: 7px 10px; margin-bottom: 10px; font-size: 13.5px; }
+.lowfeed .ui { height: 22px; }
+.animals { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.acard { background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 6px 6px 8px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.acard .aart { height: 46px; width: auto; filter: drop-shadow(0 2px 1px rgba(60,30,10,.25)); }
+.acard .aname { font-weight: 700; font-size: 12.5px; }
+.acard .astate { font-size: 11.5px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 3px; justify-content: center; flex-wrap: wrap; }
+.acard .astate .ai { height: 16px; }
+.acard .bar { height: 5px; margin-top: 3px; }
+.acard.ready { border-color: #E2B54A; background: #FFF7DF; }
+.acard.ready .astate { color: #8A5A0A; }
+.acard.hungry { border-color: #E3A99A; background: #FDF0EA; }
+.acard.hungry .astate { color: #9A3A26; }
+.acard.empty { border-style: dashed; opacity: .6; justify-content: center; min-height: 92px; }
+.acard.empty span { font-size: 26px; color: var(--edge); font-weight: 800; }
+
 /* ---------- Barn ---------- */
 .storebar { background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 8px 12px; margin-bottom: 10px; }
 .storebar .bar { height: 10px; margin-top: 6px; }

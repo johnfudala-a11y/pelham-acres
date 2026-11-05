@@ -296,6 +296,15 @@ function penSpot(b, cu, cv, dist) {
   }
   return [rnd(0.95, b.w - 0.2), rnd(0.95, b.h - 0.2)];
 }
+// the farmer just tended this pen: everyone reacts ('fed' = hop + hearts, then they tuck in; 'collect' = hop + sparkles)
+export function penCheer(o, kind) {
+  const t = Date.now();
+  for (let i = 0; i < o.animals.length; i++) {
+    const m = herd.get(o.id + ':' + i); if (!m) continue;
+    m.cheer = t + i * 90; m.cheerKind = kind;
+    if (kind === 'fed') { m.mode = 'graze'; m.until = t + 3500 + Math.random() * 2500; }   // head down to eat
+  }
+}
 function herdStep(o, b, i, an, sp, t) {
   const key = o.id + ':' + i;
   let m = herd.get(key);
@@ -368,6 +377,9 @@ function drawPen(o, b, t) {
         squash = Math.sin(t / 900 + i * 2) * 0.012;
         if (b.animal === 'chicken' && ((t + i * 911) % 3000) < 160) tilt = -0.12; // a curious head-flick
       }
+      // just fed or collected: a couple of happy hops
+      const ck = m.cheer ? (t - m.cheer) / 1300 : 2;
+      if (ck < 1) { lift += Math.abs(Math.sin(ck * Math.PI * 3 + i)) * 7 * (1 - ck); tilt = 0; }
       ctx.fillStyle = 'rgba(30,40,10,0.2)'; ctx.beginPath(); ctx.ellipse(sx, sy + 1, aw * 0.4 * (1 - lift * 0.04), aw * 0.13, 0, 0, 7); ctx.fill();
       const ah = aw * aim.naturalHeight / aim.naturalWidth;
       ctx.save(); ctx.translate(sx, sy + 2 - lift); ctx.scale(m.face, 1 - squash);
@@ -375,9 +387,27 @@ function drawPen(o, b, t) {
       ctx.drawImage(aim, -aw / 2, -ah, aw, ah); ctx.restore();
     }
     else emoji(a.icon, sx, sy - 8, 17);
+    const headY = sy - (aim ? aw * 0.95 : 22);
     if (st === 'ready') {
-      const pi = iconImg(a.product), y = sy - (aim ? aw * 0.95 : 22) + Math.sin(t / 400 + i) * 1.5;
+      const pi = iconImg(a.product), y = headY + Math.sin(t / 400 + i) * 1.5;
       if (pi) ctx.drawImage(pi, sx + 2, y - 8, 15, 15); else emoji(ITEMS[a.product].icon, sx + 9, y, 10);
+    } else if (st === 'hungry') {
+      // a little thought bubble with their feed: "I'm hungry!"
+      const y = headY - 2 + Math.sin(t / 500 + i) * 1.2, fi = itemImg(a.feed);
+      ctx.fillStyle = 'rgba(255,248,232,.95)'; ctx.strokeStyle = 'rgba(138,90,47,.8)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(sx + 6, y - 4, 7.5, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx + 1, y + 5, 1.8, 0, 7); ctx.fill(); ctx.stroke();
+      if (fi) ctx.drawImage(fi, sx + 6 - 5.5, y - 9.5, 11, 11);
+    }
+    // hearts float up after feeding; sparkles after collecting
+    if (m.cheer && t - m.cheer < 1600) {
+      const k = (t - m.cheer) / 1600;
+      ctx.save(); ctx.globalAlpha = 1 - k;
+      if (m.cheerKind === 'fed') {
+        ctx.fillStyle = '#E0607A'; ctx.font = '700 10px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('♥', sx - 4 + Math.sin(k * 6 + i) * 3, headY - k * 22); ctx.fillText('♥', sx + 6 + Math.cos(k * 5 + i) * 3, headY - 6 - k * 18);
+      } else { ctx.fillStyle = '#FFF4C2'; star(sx + 5, headY - k * 16, 3.5 * (1 - k) + 1); star(sx - 5, headY - 4 - k * 12, 2.5 * (1 - k) + 1); }
+      ctx.restore();
     }
   });
   // front fence goes in front of the animals

@@ -7,9 +7,9 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.26';
+export const APP_VERSION = '0.27';
 import { loadSprites } from './render.js';
-import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen } from './render.js';
+import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
 const $ = s => document.querySelector(s);
 const now = G.now;
@@ -185,6 +185,9 @@ const req = (id, n) => G.have(id) >= n ? `<span class="req ok">${icH(id)} ${G.ha
 const reqs = r => Object.entries(r).map(([k, v]) => req(k, v)).join(' ');
 
 // ---------- HUD ----------
+// only touch the page when the content actually changed: rebuilding it every half-second reloads
+// the little icons and makes the pills and the hint banner twitch
+function setHTML(el, html) { if (el && el._html !== html) { el.innerHTML = html; el._html = html; } }
 function refreshHud() {
   const S = G.S;
   $('#lvl').textContent = S.level;
@@ -198,7 +201,7 @@ function refreshHud() {
   $('#storePill').classList.toggle('full', used >= cap);
   const r = G.readyOrders(); const b = $('#ordBadge'); b.hidden = !r; b.textContent = r;
   const se = G.season();
-  $('#seasonPill').innerHTML = `${ui(se.name.toLowerCase(), se.icon)} ${se.name} <small>${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</small>`;
+  setHTML($('#seasonPill'), `${ui(se.name.toLowerCase(), se.icon)} ${se.name} <small>${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</small>`);
 }
 
 // ---------- top bar: tap an icon for a little description box ----------
@@ -393,7 +396,9 @@ function act(el) {
     }
     case 'collectJobs': collectProducer(o); break;
     case 'buyAnimal': { const r = G.buyAnimal(o); if (r === 'ok') { sfx.coin(); animalSound(o); } else sfx.error(); if (r === 'coins') toast('Not enough coins'); else if (r === 'full') toast('This pen is full'); break; }
-    case 'feedAll': { const n = G.feedAll(o); if (n) { sfx.plant(); animalSound(o); } else { sfx.error(); toast(`No ${nm(G.penAnimal(o).feed)} — make some at the Feed Mill`); } break; }
+    case 'feedAll': { const n = feedPen(o); if (!n) { sfx.error(); toast(`No ${nm(G.penAnimal(o).feed).toLowerCase()} left. Make some at the Feed Mill.`); } break; }
+    case 'tendPen': tendPen(o); break;
+    case 'makeFeed': goTo(guideForItem(G.penAnimal(o).feed, 'Make'), nm(G.penAnimal(o).feed)); return;
     case 'collectAnimals': collectPen(o); break;
     case 'collectRent': collectHouse(o); break;
     case 'move': {
@@ -482,10 +487,44 @@ function collectProducer(o) {
 function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : sfx.baa)(); }
 function collectPen(o) {
   const { got, full } = G.collectAnimals(o);
-  if (got) { const pr = G.penAnimal(o).product; sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}`, '#fff', pr); flyTo(o.x + 1, o.y + 1, pr, '[data-tb=barn]', got); }
+  if (got) { const pr = G.penAnimal(o).product; sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}`, '#fff', pr); flyTo(o.x + 1, o.y + 1, pr, '[data-tb=barn]', got); penCheer(o, 'collect'); }
   if (o.animals.length) animalSound(o);
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got;
+}
+function feedPen(o) {
+  const a = G.penAnimal(o), fed = G.feedAll(o);
+  if (fed) {
+    sfx.plant(); setTimeout(() => animalSound(o), 250);
+    flyFrom('[data-tb=barn]', o.x + 1, o.y + 1, a.feed, fed);
+    setTimeout(() => { floater(o.x + 1, o.y + 0.6, `Fed ${fed}`, '#E8F7D8', a.feed); penCheer(o, 'fed'); }, 650);
+  }
+  return fed;
+}
+// One tap on a pen tends it: collect everything ready, then feed everyone hungry.
+// Returns true if anything happened (then the panel stays closed so you can tap the next pen).
+function tendPen(o) {
+  const a = G.penAnimal(o), got = collectPen(o), fed = feedPen(o);
+  const stillHungry = o.animals.filter(x => G.animalState(x) === 'hungry').length;
+  if (stillHungry && !fed) { sfx.error(); toast(`Your ${a.name.toLowerCase()}s are hungry, but you're out of ${nm(a.feed).toLowerCase()}. Make some at the Feed Mill.`); }
+  else if (stillHungry) toast(`Fed ${fed}. ${stillHungry} still hungry: you need more ${nm(a.feed).toLowerCase()}.`);
+  if (got || fed) G.save();
+  return !!(got || fed);
+}
+// the reverse of flyTo: little pictures leave a HUD button and land on a map tile
+function flyFrom(source, gx, gy, id, n = 1) {
+  const src = artSrc(id), sEl = $(source); if (!src || !sEl) return;
+  const r = sEl.getBoundingClientRect(), sx = r.left + r.width / 2, sy = r.top + r.height / 2, to = tileCenterScreen(gx, gy);
+  for (let i = 0; i < Math.min(n, 5); i++) {
+    const im = document.createElement('img'); im.src = src; im.className = 'fly'; document.body.appendChild(im);
+    const tx = to.x + (Math.random() - 0.5) * 30, ty = to.y - 10, mx = (sx + tx) / 2 + (Math.random() - 0.5) * 60, my = Math.min(sy, ty) - 80;
+    im.animate([
+      { transform: `translate(${sx - 16}px, ${sy - 16}px) scale(.5)`, opacity: 0 },
+      { transform: `translate(${sx - 16}px, ${sy - 30}px) scale(1)`, opacity: 1, offset: 0.15 },
+      { transform: `translate(${mx - 16}px, ${my - 16}px) scale(1)`, opacity: 1, offset: 0.55 },
+      { transform: `translate(${tx - 16}px, ${ty - 16}px) scale(.6)`, opacity: 0 }], { duration: 650 + i * 60, delay: i * 60, easing: 'cubic-bezier(.45,.05,.55,.95)' })
+      .onfinish = () => im.remove();
+  }
 }
 function collectHouse(o) {
   const c = G.collectRent(o);
@@ -546,7 +585,7 @@ function tapObject(o) {
       if (G.fieldReady(o)) return harvestField(o);
       return openSheet(`${CROPS[o.crop].name} growing`, () => fieldInfo(o), o);
     case 'producer': collectProducer(o); return openSheet(b.name, () => producerSheet(o), o);
-    case 'pen': collectPen(o); return openSheet(b.name, () => penSheet(o), o);
+    case 'pen': if (o.animals.length && tendPen(o)) return; return openSheet(b.name, () => penSheet(o), o);
     case 'house': if (collectHouse(o)) { G.save(); return; } return openSheet(b.name, () => houseSheet(o), o);
     case 'storage': return openSheet('Barn', () => barnSheet(), o);
     case 'station': sfx.tap(); return openSheet('Train Station', () => stationSheet(o), o);
@@ -618,18 +657,25 @@ function penSheet(o) {
   const b = BUILD[o.t], a = G.penAnimal(o), t = now();
   const hungry = o.animals.filter(x => G.animalState(x) === 'hungry').length;
   const ready = o.animals.filter(x => G.animalState(x) === 'ready').length;
-  let html = `<p class="sub">${a.name}s eat ${ic(a.feed)} ${nm(a.feed)} and produce ${ic(a.product)} ${nm(a.product)} every ${secs(Math.round(G.animalTime(o, a)))}.</p><div class="queue" style="flex-wrap:wrap">`;
-  o.animals.forEach(an => {
-    const st = G.animalState(an);
-    html += `<div class="slot ${st === 'ready' ? 'done' : ''} ${st === 'hungry' ? 'hungry' : ''}">${art(st === 'ready' ? a.product : b.animal)}<small ${st === 'busy' ? `data-end="${an.end}"` : ''}>${st === 'hungry' ? 'hungry' : st === 'ready' ? 'ready!' : fmtT(an.end - t)}</small></div>`;
-  });
-  for (let i = o.animals.length; i < G.penCap(o); i++) html += '<div class="slot"><small>empty</small></div>';
-  html += `</div><div class="row">
-    ${ready ? '<button class="btn" data-act="collectAnimals">Collect</button>' : ''}
-    ${hungry ? `<button class="btn" data-act="feedAll">Feed ${hungry} (${req(a.feed, hungry)})</button>` : ''}
-    ${o.animals.some(x => G.animalState(x) === 'busy') ? `<button class="btn gold sm" data-act="hg">⏳ Finish all (${G.S.hg})</button>` : ''}
-    ${o.animals.length < G.penCap(o) ? `<button class="btn alt" data-act="buyAnimal">Buy ${a.name} · ${G.animalCost(o)}🪙</button>` : ''}
-    <span class="spacer"></span>${moveBtn(o)}</div>`;
+  const feedHave = G.have(a.feed), busy = o.animals.some(x => G.animalState(x) === 'busy');
+  // the feed → product loop at a glance, with how much feed is in the barn
+  let html = `<div class="penloop"><div class="pl">${art(a.feed, 'plart')}<b>${feedHave}</b><small>${nm(a.feed)} in barn</small></div>
+      <div class="arrow">→</div><div class="pl">${art(b.animal, 'plart')}<small>every ${secs(Math.round(G.animalTime(o, a)))}</small></div>
+      <div class="arrow">→</div><div class="pl">${art(a.product, 'plart')}<b>${G.have(a.product)}</b><small>${nm(a.product)} in barn</small></div></div>`;
+  if (hungry > feedHave) html += `<div class="lowfeed">${ui('lock', '')}<div class="grow"><b>Not enough ${nm(a.feed).toLowerCase()}</b> for everyone (${hungry} hungry, ${feedHave} in the barn).</div><button class="btn sm" data-act="makeFeed">Make more</button></div>`;
+  // one card per animal
+  html += '<div class="animals">' + o.animals.map((an, i) => {
+    const st = G.animalState(an), total = G.animalTime(o, a) * 1000, start = an.end - total;
+    return `<div class="acard ${st}">${art(b.animal, 'aart')}<div class="aname">${a.name} ${i + 1}</div>
+      ${st === 'ready' ? `<div class="astate">${art(a.product, 'ai')} Ready!</div>` : st === 'hungry' ? `<div class="astate">${art(a.feed, 'ai')} Hungry</div>`
+        : `<div class="astate">Making ${nm(a.product).toLowerCase()} · <span data-end="${an.end}">${fmtT(an.end - t)}</span></div><div class="bar"><div data-bar data-s="${start}" data-e="${an.end}"></div></div>`}</div>`;
+  }).join('') + Array.from({ length: G.penCap(o) - o.animals.length }, () => `<div class="acard empty"><span>+</span><div class="aname">Empty spot</div></div>`).join('') + '</div>';
+  html += `<div class="row">
+    ${ready || (hungry && feedHave) ? `<button class="btn gold" data-act="tendPen">${ready ? `Collect ${ready}` : ''}${ready && hungry && feedHave ? ' & ' : ''}${hungry && feedHave ? `Feed ${Math.min(hungry, feedHave)}` : ''}</button>` : ''}
+    ${busy ? `<button class="btn alt sm" data-act="hg">⏳ Finish all (${G.S.hg})</button>` : ''}
+    ${o.animals.length < G.penCap(o) ? `<button class="btn alt" data-act="buyAnimal">Buy a ${a.name.toLowerCase()} · ${G.animalCost(o)}🪙</button>` : ''}
+    <span class="spacer"></span>${moveBtn(o)}</div>
+    <p class="sub" style="margin-top:8px">Tip: just tap the pen on the farm to collect and feed in one go.</p>`;
   if (!o.animals.length) html += `<p class="sub" style="margin-top:12px">Buy your first ${a.name.toLowerCase()} to get started.</p>`;
   return html + '<h3>Upgrade</h3>' + upgradeBlock(o);
 }
@@ -1167,7 +1213,7 @@ function applyGuide() {
   view.guide = g && (g.obj || g.walker) ? g : null;
   const h = $('#hint');
   if (!g || view.ghost || view.plantCrop) { h.hidden = true; }
-  else { h.hidden = false; h.innerHTML = ui('bulb', '💡') + ' '; h.append(g.text); }
+  else { h.hidden = false; setHTML(h, ui('bulb', '💡') + ' ' + esc(g.text)); }
   document.querySelectorAll('.tb').forEach(b => b.classList.toggle('pulse', !!g && g.tb === b.dataset.tb));
 }
 $('#hint').addEventListener('click', () => { sfx.tap(); openSheet('Quests', questsSheet); $('#sheetTitle').dataset.k = 'quests'; });
@@ -1380,12 +1426,12 @@ function collectAll() {
     const k = BUILD[o.t].kind;
     if (k === 'field' && o.crop && o.end <= now()) { const r = G.harvest(o); if (r === 'full') { full = true; break; } if (r) items += r.n; }
     else if (k === 'producer') { const r = G.collectJobs(o); items += r.got.reduce((s, j) => s + j.n, 0); if (r.full) { full = true; break; } }
-    else if (k === 'pen') { const r = G.collectAnimals(o); items += r.got; if (r.full) { full = true; break; } }
+    else if (k === 'pen') { const r = G.collectAnimals(o); items += r.got; G.feedAll(o); if (r.full) { full = true; break; } }
     else if (k === 'house') coins += G.collectRent(o);
   }
   if (items || coins) sfx.collect();
   closeModal();
-  toast(`Collected ${items} item${items === 1 ? '' : 's'}${coins ? ` and ${fmtN(coins)} 🪙` : ''}${full ? ' · the barn is full!' : ''}`);
+  toast(`Collected ${items} item${items === 1 ? '' : 's'}${coins ? ` and ${fmtN(coins)} 🪙` : ''} and fed your animals${full ? ' · the barn is full!' : ''}`);
   G.save(); refreshHud(); setTimeout(showLevelUps, 400);
 }
 let hiddenAt = 0;
