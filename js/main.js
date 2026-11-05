@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.31';
+export const APP_VERSION = '0.32';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -519,7 +519,7 @@ function act(el) {
     case 'tutReplay': tutReplay(); return;
     case 'flip': { const g = view.ghost; if (g) { g.proto.flip = !g.proto.flip; sfx.tap(); haptic(); } return; }
     case 'toggle':
-      G.S.settings[d.k] = d.k === 'hints' || d.k === 'haptics' ? G.S.settings[d.k] === false : !G.S.settings[d.k];
+      G.S.settings[d.k] = d.k === 'hints' || d.k === 'haptics' || d.k === 'recap' ? G.S.settings[d.k] === false : !G.S.settings[d.k];
       if (d.k === 'music') setMusic(G.S.settings.music); else if (d.k === 'sfx') setSfx(G.S.settings.sfx); else if (d.k === 'haptics') haptic(); else applyGuide();
       sfx.tap(); refreshSoundBtn(); break;
   }
@@ -918,6 +918,7 @@ function menuSheet() {
       ${slideRow('amb', 'Birdsong and crickets', 'blossom', st.sfx)}
       ${switchRow('haptics', 'Vibration', 'heart', st.haptics !== false, 'A light tap you can feel, where your device supports it')}
       ${switchRow('hints', 'Hints and arrows', 'bulb', st.hints !== false)}
+      ${switchRow('recap', 'Evening summary', 'journal', st.recap !== false, 'A "Today on the farm" card when you open the game after 7:30 pm')}
     </div>
     <div class="row" style="margin-top:8px"><button class="btn alt sm" data-act="tutReplay">${ui('scroll', '')} Replay Hattie's tour</button></div>
     <p class="sub">No sound? Turn the iPad's volume up and tap the map once.</p>
@@ -1625,13 +1626,21 @@ function trackCoins() {   // coins earned today = every rise in the purse (spend
   lastCoins = c;
 }
 const hourNow = () => view.debugHour != null ? view.debugHour : new Date().getHours() + new Date().getMinutes() / 60;
+// It never pops up in the middle of play: only in the first half-minute after you open the game
+// (or come back to it) in the evening, once per day, and not at all if it's switched off in Settings.
+let recapArmedUntil = performance.now() + 30000;
+const RECAP_KEY = 'pelhamAcres.recapDay';   // also kept on the device, so a cloud sync can't bring it back
 function sunsetCheck() {
   const S = G.S, h = hourNow(), T = todayLog();
-  if (h < 19.5 || S.recapDay === T.day || inTutorial() || !$('#modal').hidden || levelQueue.length || view.ghost || sheetFn) return;
+  if (performance.now() > recapArmedUntil || S.settings.recap === false) return;
+  let seen = S.recapDay; try { seen = localStorage.getItem(RECAP_KEY) || seen; } catch (e) {}
+  if (h < 19.5 || seen === T.day || S.recapDay === T.day || inTutorial() || !$('#modal').hidden || levelQueue.length || view.ghost || sheetFn) return;
   if (T.harvest + T.make + T.deliver + T.build + T.fed < 3) return;   // barely played today: no need
-  S.recapDay = T.day; G.save();
+  S.recapDay = T.day; G.save(); try { localStorage.setItem(RECAP_KEY, T.day); } catch (e) {}
+  recapArmedUntil = 0;
   showRecap(T);
 }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) recapArmedUntil = performance.now() + 30000; });
 function showRecap(T) {
   const line = (ic, txt) => `<div>${ic}<span>${txt}</span></div>`, pl = (n, w) => `${fmtN(n)} ${w}${n === 1 ? '' : 's'}`;
   const rows = [];
@@ -1738,7 +1747,7 @@ window.__booted = true; { const bf = document.getElementById('bootFail'); if (bf
   if (sp) step();
 }
 setInterval(() => { refreshHud(); liveUpdate(); trackCoins(); if ($('#exp').hidden) questTick(); else updateEnergy(); }, 500);
-setInterval(() => { if (!$('#exp').hidden) return; planNap(); sunsetCheck(); }, 5000);
+setInterval(() => { if (!$('#exp').hidden) return; planNap(); sunsetCheck(); }, 3000);
 setInterval(() => G.save(), 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); });
 addEventListener('pagehide', () => G.save());
