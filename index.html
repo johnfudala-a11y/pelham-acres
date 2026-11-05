@@ -27,7 +27,8 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
+<!-- the font loads in the background so a slow connection can never hold up the game starting -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -74,6 +75,25 @@
 <div id="toast"></div>
 <div id="hudTip" hidden></div>
 
+<!-- Safety net: if the game hasn't started after a few seconds (e.g. the device caught a half-finished update),
+     offer a one-tap fresh reload that clears the offline copies. Your farm is not touched. -->
+<div id="bootFail" hidden><div class="bootcard"><b>Pelham Acres is having trouble starting</b>
+  <p>This can happen right after an update. Your farm is safe.</p><button id="bootFix">Tap to refresh</button></div></div>
+<script>
+  (function () {
+    function show() { if (window.__booted) return; var b = document.getElementById('bootFail'); if (b) b.hidden = false; }
+    setTimeout(show, 9000);
+    window.addEventListener('error', function () { setTimeout(show, 2500); });
+    window.addEventListener('unhandledrejection', function () { setTimeout(show, 2500); });
+    document.getElementById('bootFix').onclick = function () {
+      var done = function () { location.replace(location.pathname + '?fresh=' + Date.now()); };
+      var jobs = [];
+      if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+      if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+      Promise.all(jobs).then(done, done);
+    };
+  })();
+</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

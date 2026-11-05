@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.25';
+export const APP_VERSION = '0.26';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen } from './render.js';
 
@@ -1407,6 +1407,8 @@ function frame(ts) {
   draw();
 }
 requestAnimationFrame(frame);
+// started fine: stand down the start-up safety net
+window.__booted = true; { const bf = document.getElementById('bootFail'); if (bf) bf.hidden = true; }
 setInterval(() => { refreshHud(); liveUpdate(); if ($('#exp').hidden) questTick(); else updateEnergy(); }, 500);
 setInterval(() => G.save(), 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); });
