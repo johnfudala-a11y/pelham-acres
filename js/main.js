@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.33';
+export const APP_VERSION = '0.34';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -207,9 +207,42 @@ function moveBtn(o) {
   if (r > now()) return `<button class="btn alt sm off" data-act="move">↔ Move again in <span data-end="${r}">${fmtT(r - now())}</span></button>`;
   return `<button class="btn alt sm" data-act="move">↔ Move</button>${G.moveLimited(o) ? ' <span class="sub" style="margin:0">once an hour</span>' : ''}`;
 }
-// a "have/need" chip; when you're short, tapping it shows where to get more
-const req = (id, n) => G.have(id) >= n ? `<span class="req ok">${icH(id)} ${G.have(id)}/${n}</span>`
-  : `<span class="req no tappable" data-act="where" data-id="${id}" title="Where do I get this?">${icH(id)} ${G.have(id)}/${n}<i class="q">?</i></span>`;
+// a "have/need" chip: tap it (enough or not) for a little card about that item and where it comes from
+const req = (id, n) => G.have(id) >= n ? `<span class="req ok tappable" data-act="itemInfo" data-id="${id}" data-n="${n}" title="About ${esc(nm(id))}">${icH(id)} ${G.have(id)}/${n}</span>`
+  : `<span class="req no tappable" data-act="itemInfo" data-id="${id}" data-n="${n}" title="Where do I get this?">${icH(id)} ${G.have(id)}/${n}<i class="q">?</i></span>`;
+// what an item is and how you get it, in plain words
+function itemOrigin(id) {
+  if (CROPS[id]) {
+    const c = CROPS[id], locked = G.S.level < c.lvl;
+    return `${ui('field', '')} <span>Grown in a field. Plant it for ${c.cost} 🪙 and it's ready in about <b>${secs(G.cropTime(id))}</b>.${locked ? ` Unlocks at level ${c.lvl}.` : ''}</span>`;
+  }
+  for (const b in RECIPES) {
+    const r = RECIPES[b].find(x => x.out === id); if (!r) continue;
+    const ins = Object.entries(r.in).map(([k, v]) => `<span class="chip">${art(k)} ${v} ${esc(nm(k))}</span>`).join(' ');
+    const own = G.count(b) > 0, locked = G.S.level < Math.max(r.lvl, BUILD[b].lvl || 1);
+    return `${art(b, 'ai')} <span>Made at the <b>${BUILD[b].name}</b>${r.n > 1 ? ` (${r.n} at a time)` : ''} from <span class="chips">${ins}</span>
+      ${locked ? `<br><small>Unlocks at level ${Math.max(r.lvl, BUILD[b].lvl || 1)}.</small>` : !own ? `<br><small>You'll need to build a ${BUILD[b].name} first (tap Build).</small>` : ''}</span>`;
+  }
+  for (const k in ANIMALS) if (ANIMALS[k].product === id) {
+    const a = ANIMALS[k], pen = Object.keys(BUILD).find(b => BUILD[b].animal === k);
+    return `${art(k, 'ai')} <span>Comes from your <b>${a.name.toLowerCase()}s</b> at the ${BUILD[pen].name}. Feed them ${art(a.feed)} ${esc(nm(a.feed).toLowerCase())} and collect it when it's ready.</span>`;
+  }
+  if (id === 'wood') return `${ui('axe', '')} <span>Clear trees to get wood. Every tree gives 1–2.</span>`;
+  if (id === 'stone') return `${ui('pickaxe', '')} <span>Clear rocks to get stone. Every rock gives 1–2.</span>`;
+  return `<span>Found while exploring, on the freight train, and as gifts.</span>`;
+}
+function itemInfo(id, need) {
+  const have = G.have(id), ok = have >= need, val = VALUE[id];
+  sfx.open();
+  modal(`<div class="bigart">${art(id, 'bigimg')}</div><h2>${esc(nm(id))}</h2>
+    <div class="havebar ${need ? (ok ? 'ok' : 'no') : ''}">${need
+      ? (ok ? `You have <b>${have}</b>. This needs <b>${need}</b>, so you're all set ✓` : `You have <b>${have}</b>. This needs <b>${need}</b>, so you need <b>${need - have} more</b>.`)
+      : `You have <b>${have}</b> in your barn.`}</div>
+    <div class="awaylist origin"><div>${itemOrigin(id)}</div></div>
+    ${val ? `<p class="sub">Sells at the barn for ${G.sellPrice(id)} 🪙 each.</p>` : ''}
+    ${!ok && need ? `<button class="btn gold wide" data-act="where" data-id="${id}">Show me where to get it</button><div style="height:8px"></div>` : ''}
+    <button class="btn alt wide" data-act="closeModal">Got it</button>`);
+}
 const reqs = r => Object.entries(r).map(([k, v]) => req(k, v)).join(' ');
 
 // ---------- HUD ----------
@@ -393,6 +426,7 @@ function act(el) {
     case 'closeModal': closeModal(); setTimeout(showLevelUps, 200); break;
     case 'collectAll': collectAll(); return;
     case 'where': goTo(guideForItem(d.id, 'Make'), nm(d.id)); return;
+    case 'itemInfo': itemInfo(d.id, +d.n || 0); return;
     case 'showme': { const q = QUEST_BY_ID[d.q]; goTo(q && guideFor(q, q.goals[+d.g]), q && q.goals[+d.g].label); return; }
     case 'claimChapter': {
       const c = Q.claimChapter(d.id); if (!c) break;
@@ -877,7 +911,7 @@ function ordersSheet() {
   const list = G.S.orders.map((o, i) => ({ o, i, ok: !o.wait && G.hasAll(o.items) }))
     .sort((a, b) => (b.ok - a.ok) || (isRush(b.o) - isRush(a.o)) || (!!a.o.wait - !!b.o.wait));
   const ready = list.filter(x => x.ok).length;
-  return `<p class="sub">${ready ? `<b>${ready} order${ready > 1 ? 's' : ''} ready to deliver!</b> ` : ''}Filling a neighbor's order builds your friendship. Tap a red item to see where to get it.</p><div class="orders">` + list.map(({ o, i, ok }) => {
+  return `<p class="sub">${ready ? `<b>${ready} order${ready > 1 ? 's' : ''} ready to deliver!</b> ` : ''}Filling a neighbor's order builds your friendship. Tap any item to see what it is and where to get it.</p><div class="orders">` + list.map(({ o, i, ok }) => {
     if (o.wait) return `<div class="order waiting">${ui('mail', '✉️')}<span class="sub" style="margin:0">A new order arrives in <b data-end="${o.wait}">${fmtT(o.wait - t)}</b></span></div>`;
     const pid = G.orderPid(o), rush = isRush(o);
     const coins = rush ? Math.round(o.coins * 1.5) : o.coins;
