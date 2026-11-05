@@ -3,7 +3,7 @@
 import * as G from './game.js';
 
 // Project URL and the *anon public* key (safe to ship in a web page; row-level security protects each save).
-export const CLOUD = { url: '', key: '' };
+export const CLOUD = { url: 'https://khoikcuhtzchxcafelrk.supabase.co', key: 'sb_publishable_q25qJ-wDLhVXGUIiZR-ZWg_fGNQBrYu' };
 export const cloudEnabled = () => !!(CLOUD.url && CLOUD.key);
 
 const AUTH_KEY = 'pelhamAcres.auth';
