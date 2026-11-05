@@ -384,6 +384,10 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
 .awaylist { text-align: left; background: var(--paper2); border: 2px solid var(--edge); border-radius: 12px; padding: 6px 10px; margin: 0 0 12px; }
 .awaylist div { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding: 3px 0; }
 .awaylist .ui { height: 24px; }
+.awaylist.recap div { font-size: 15px; padding: 5px 0; border-bottom: 1px dashed rgba(138,90,47,.22); }
+.awaylist.recap div:last-child { border-bottom: 0; }
+.recapart { margin: -6px -6px 6px; border-radius: 14px; overflow: hidden; border: 3px solid var(--wood); box-shadow: 0 3px 0 var(--wood-d); }
+.recapart img { display: block; width: 100%; height: 130px; object-fit: cover; object-position: center 40%; filter: sepia(.25) saturate(1.15) hue-rotate(-8deg) brightness(.95); }
 
 /* messages: a little parchment banner with ribbon tails */
 #toast { position: fixed; top: calc(env(safe-area-inset-top) + 64px); left: 50%; transform: translate(-50%, -24px) scale(.9); opacity: 0;
@@ -434,6 +438,61 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
 .medalnum { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -52%); font-family: var(--serif); font-weight: 900; font-size: 34px; color: #6A4108; text-shadow: 0 1px 0 rgba(255,240,190,.9); }
 /* everything presses down a touch */
 .btn, .tab, .tb, .pill { transition: transform .08s; }
+
+/* ---------- Mayor Hattie's tour: a parchment card above the toolbar ---------- */
+#coach { position: fixed; z-index: 7; bottom: calc(env(safe-area-inset-bottom) + 100px); left: 50%; transform: translateX(-50%);
+  width: min(520px, calc(100vw - 24px)); display: flex; gap: 12px; align-items: flex-start;
+  background: var(--parchbg); border: 3px solid var(--wood); border-radius: 18px; padding: 10px 14px 10px 10px;
+  box-shadow: 0 4px 0 var(--wood-d), 0 10px 24px rgba(0,0,0,.28); }
+#coach[hidden] { display: none; }
+#coach.pop { animation: coachpop .35s cubic-bezier(.3,1.6,.5,1); }
+@keyframes coachpop { from { transform: translateX(-50%) scale(.9); opacity: .4; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.coachface { width: 64px; height: 64px; object-fit: cover; object-position: top; border-radius: 50%; border: 3px solid var(--gold);
+  background: #F9EBC8; flex: none; box-shadow: 0 2px 0 var(--gold-d); }
+.coachbody { flex: 1; min-width: 0; }
+.coachname { font-family: var(--serif); font-weight: 900; font-size: 15px; color: var(--wood-d); display: flex; justify-content: space-between; }
+.coachstep { font-family: inherit; font-size: 12px; color: var(--muted); font-weight: 700; }
+.coachsay { font-size: 15.5px; line-height: 1.35; margin: 2px 0 6px; }
+.coachbtns { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.linkbtn { background: none; border: 0; padding: 4px 0; color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: underline; }
+/* while a panel is open the card moves out of its way */
+@media (orientation: landscape) and (min-width: 760px) {
+  body.sheet-open #coach { left: 12px; transform: none; width: min(440px, calc(100vw - min(480px, 48vw) - 36px)); }
+  body.sheet-open #coach.pop { animation: none; }
+}
+@media (orientation: portrait), (max-width: 759px) {
+  body.sheet-open #coach { bottom: auto; top: calc(env(safe-area-inset-top) + 62px); }
+}
+
+/* ---------- settings ---------- */
+.parch { background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 10px 12px; }
+.setbox { background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 2px 12px; }
+.setrow { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px dashed rgba(138,90,47,.25); }
+.setrow:last-child { border-bottom: 0; }
+.setrow .ui { height: 24px; flex: none; }
+.setlbl { flex: 1; font-weight: 700; font-size: 15px; display: flex; flex-direction: column; }
+.setlbl small, .savestat small { font-weight: 500; font-size: 12px; color: var(--muted); }
+.switch { flex: none; width: 52px; height: 30px; border-radius: 15px; border: 2px solid var(--wood); background: #D9C9A6; position: relative; padding: 0; transition: background .15s; }
+.switch i { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #FFF8E8; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+.switch.on { background: var(--green); border-color: var(--green-d); }
+.switch.on i { left: 24px; }
+.slider { flex: none; width: min(200px, 42%); accent-color: var(--green); height: 28px; }
+.slider.dim { opacity: .45; }
+.savestat { display: flex; gap: 10px; align-items: center; background: var(--paper2); border: 2px solid var(--edge); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+.savestat.ok { border-color: #A8C98A; background: #EEF5DF; }
+.savestat .ui { height: 30px; }
+.savestat div { display: flex; flex-direction: column; }
+.credits { margin: 22px 0 6px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+/* ---------- loading screen ---------- */
+#splash { position: fixed; inset: 0; z-index: 40; background: #3E2A16 url(../icons/share.jpg) center 30% / cover no-repeat;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: calc(env(safe-area-inset-bottom) + 9vh);
+  transition: opacity .6s ease; }
+#splash.gone { opacity: 0; pointer-events: none; }
+#splash .load { background: rgba(251,243,223,.92); border: 3px solid var(--wood); border-radius: 999px; padding: 8px 18px; font-weight: 700;
+  box-shadow: 0 4px 0 var(--wood-d), 0 8px 20px rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 220px; }
+#splash .lbar { width: 180px; height: 9px; background: #E6D2A8; border-radius: 6px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.25); }
+#splash .lbar i { display: block; height: 100%; width: 8%; background: linear-gradient(180deg, #FFE08A, #E3A12A 60%, #C9861A); transition: width .3s; }
 
 @media (max-width: 700px) { #seasonPill small { display: none; } }
 @media (max-width: 520px) {

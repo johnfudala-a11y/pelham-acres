@@ -28,6 +28,7 @@ function startKeepAlive() {
 
 export function initAudio(settings) {
   state.music = settings.music; state.sfx = settings.sfx;
+  if (settings.vol) for (const k in vol) if (typeof settings.vol[k] === 'number') vol[k] = settings.vol[k];
   const unlock = () => {
     startKeepAlive();
     if (!ctx) {
@@ -35,7 +36,7 @@ export function initAudio(settings) {
       if (!AC) return;
       ctx = new AC();
       master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
-      sfxBus = ctx.createGain(); sfxBus.gain.value = state.sfx ? 0.55 : 0; sfxBus.connect(master);
+      sfxBus = ctx.createGain(); sfxBus.gain.value = state.sfx ? 0.55 * vol.sfx : 0; sfxBus.connect(master);
       musicBus = ctx.createGain(); musicBus.gain.value = state.music ? MUSIC_VOL() : 0; musicBus.connect(master);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -65,8 +66,17 @@ export function setMusic(on) {
   if (!on) decks.forEach(d => d.el.pause()); else if (ctx) songTick();
 }
 // the recorded tracks are mastered louder than the old synth tune, so they sit a little lower
-const MUSIC_VOL = () => (recorded ? 0.26 : 0.32);
-export function setSfx(on) { state.sfx = on; if (sfxBus) sfxBus.gain.setTargetAtTime(on ? 0.55 : 0, ctx.currentTime, 0.05); }
+const MUSIC_VOL = () => (recorded ? 0.26 : 0.32) * vol.music;
+export function setSfx(on) { state.sfx = on; if (sfxBus) sfxBus.gain.setTargetAtTime(on ? 0.55 * vol.sfx : 0, ctx.currentTime, 0.05); }
+// volume sliders (0..1) for music, sound effects and the birdsong/cricket ambience
+const vol = { music: 1, sfx: 1, amb: 1 };
+export function setVolume(kind, v) {
+  vol[kind] = Math.max(0, Math.min(1, v));
+  if (!ctx) return;
+  if (kind === 'music' && musicBus) musicBus.gain.setTargetAtTime(state.music ? MUSIC_VOL() : 0, ctx.currentTime, 0.1);
+  if (kind === 'sfx' && sfxBus) sfxBus.gain.setTargetAtTime(state.sfx ? 0.55 * vol.sfx : 0, ctx.currentTime, 0.05);
+  if (kind === 'amb' && ambBus) ambBus.gain.setTargetAtTime(0.35 * vol.amb, ctx.currentTime, 0.1);
+}
 
 // ---------- building blocks ----------
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
@@ -124,6 +134,12 @@ export const sfx = {
   deliver() { if (!ok()) return; const t = T(); [72, 76, 79, 84].forEach((m, i) => pluck(m, t + i * 0.08, 0.17)); this.coin(); },
   levelUp() { if (!ok()) return; const t = T(); [60, 64, 67, 72, 76, 79, 84].forEach((m, i) => pluck(m, t + i * 0.09, 0.18, sfxBus, 0.5)); [72, 76, 79].forEach(m => tone(mtof(m), t + 0.7, { type: 'triangle', dur: 1.2, vol: 0.08, attack: 0.05 })); },
   // a soft, friendly "bonk" rather than a buzzer
+  // a building lands: a soft wooden thud, then a little settling knock
+  thunk()   { if (!ok()) return; const t = T(); tone(110, t, { type: 'sine', dur: 0.22, vol: 0.32, slideTo: 55 }); noise(t, { dur: 0.12, vol: 0.22, type: 'lowpass', freq: 450 }); noise(t + 0.13, { dur: 0.05, vol: 0.12, freq: 900, q: 4 }); tone(190, t + 0.13, { type: 'sine', dur: 0.06, vol: 0.1 }); },
+  // the ghost snaps to a new square while you drag it
+  tick()    { if (!ok() || throttle('tick', 45)) return; const t = T(); noise(t, { dur: 0.018, vol: 0.08, freq: 2600, q: 5 }); },
+  // a story chapter finished: a warmer, longer flourish than a level-up
+  fanfare() { if (!ok()) return; const t = T(); [[60, 64, 67], [65, 69, 72], [67, 71, 74], [72, 76, 79, 84]].forEach((ch, i) => ch.forEach((m, j) => pluck(m, t + i * 0.32 + j * 0.03, 0.15, sfxBus, i === 3 ? 1.6 : 0.5))); [72, 76, 79].forEach(m => tone(mtof(m), t + 0.96, { type: 'triangle', dur: 1.8, vol: 0.07, attack: 0.08 })); bell(96, t + 1.0, 0.05); bell(100, t + 1.15, 0.04); },
   error()   { if (!ok() || throttle('error', 300)) return; const t = T(); tone(240, t, { type: 'sine', dur: 0.14, vol: 0.18, slideTo: 170 }); noise(t, { dur: 0.05, vol: 0.06, type: 'lowpass', freq: 600 }); },
   hourglass() { if (!ok()) return; const t = T(); for (let i = 0; i < 8; i++) tone(mtof(84 + i * 2), t + i * 0.035, { type: 'sine', dur: 0.08, vol: 0.08 }); },
   // farm animals
@@ -150,7 +166,8 @@ function bell(m, t, vol = 0.08, bus = sfxBus) {
 let ambBus = null, ambTimer = null;
 function ambience() {
   if (!ctx || ctx.state !== 'running' || !state.sfx) return;
-  if (!ambBus) { ambBus = ctx.createGain(); ambBus.gain.value = 0.35; ambBus.connect(master); }
+  if (!(vol.amb > 0)) return;
+  if (!ambBus) { ambBus = ctx.createGain(); ambBus.gain.value = 0.35 * vol.amb; ambBus.connect(master); }
   const h = new Date().getHours() + new Date().getMinutes() / 60, t = ctx.currentTime + 0.05;
   if (h >= 6 && h < 19.5) {
     if (Math.random() < 0.45) {   // a little songbird phrase: 2-5 quick rising/falling chirps

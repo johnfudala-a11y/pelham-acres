@@ -1,14 +1,14 @@
 // Pelham Acres — input, menus, and the game loop.
 import { BUILD, CROPS, ITEMS, PRODUCTS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER } from './data.js';
 import * as G from './game.js';
-import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
+import { initAudio, sfx, setMusic, setSfx, setVolume, audioRunning } from './audio.js';
 import * as Q from './quests.js';
 import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.28';
-import { loadSprites } from './render.js';
+export const APP_VERSION = '0.29';
+import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
 const $ = s => document.querySelector(s);
@@ -85,6 +85,24 @@ function confetti() {
   setTimeout(() => box.remove(), 3400);
 }
 
+// ---------- haptics: a light tap you can feel on harvest, collect, build ----------
+// Android/Chrome has navigator.vibrate. iPhone/iPad Safari (iOS 18+) gives a light "tick" when a
+// switch-style checkbox is toggled, so we quietly toggle a hidden one. Elsewhere it does nothing.
+let hapticEl = null, hapticAt = 0;
+function haptic(strong) {
+  if (G.S && G.S.settings && G.S.settings.haptics === false) return;
+  const t = performance.now(); if (t - hapticAt < 70) return; hapticAt = t;   // dragging across a row: not a buzz-fest
+  try {
+    if (navigator.vibrate) { if (!navigator.userActivation || navigator.userActivation.hasBeenActive) navigator.vibrate(strong ? 22 : 9); return; }
+    if (!hapticEl) {
+      hapticEl = document.createElement('label'); hapticEl.setAttribute('aria-hidden', 'true');
+      hapticEl.style.cssText = 'position:fixed;left:-99px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
+      const i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('switch', ''); i.tabIndex = -1;
+      hapticEl.appendChild(i); document.body.appendChild(hapticEl);
+    }
+    hapticEl.click();
+  } catch (e) { /* no haptics here */ }
+}
 // ---------- toast / modal ----------
 let toastTimer;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -136,7 +154,7 @@ function showLevelUps() {
   const L = levelQueue.shift();
   if (typeof L === 'function') { L(); return; }   // a queued pop-up (e.g. a friendship heart)
   const un = unlocksAt(L);
-  sfx.levelUp(); confetti();
+  sfx.levelUp(); confetti(); haptic(true);
   modal(`<div class="bigart">${IMG('sprites/icon-medal.webp', '🎉', 'bigimg')}<div class="medalnum">${L}</div></div><h2>Level ${L}!</h2><p class="sub">+${L * 15} 🪙 &nbsp; +2 ⏳</p>
     ${un.length ? `<b>New this level</b><div class="unlocks">${un.map(u => `<div>${u.id && (BUILD[u.id] || ITEMS[u.id]) ? art(u.id) : u.icon} ${u.name}</div>`).join('')}</div>` : '<p>Keep growing Pelham Acres!</p>'}
     <button class="btn wide" data-act="closeModal">Hooray!</button>`);
@@ -161,6 +179,16 @@ function renderSheet() {
 function closeSheet() { sheetFn = null; sheetObj = null; $('#sheet').classList.remove('open'); $('#sheet').setAttribute('aria-hidden', 'true'); document.body.classList.remove('sheet-open'); }
 $('#sheetClose').addEventListener('click', () => { sfx.close(); closeSheet(); });
 $('#sheetBody').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) act(a); });
+// volume sliders: change as you drag, save (and play a sample for effects) when you let go
+$('#sheetBody').addEventListener('input', e => {
+  const k = e.target.dataset && e.target.dataset.vol; if (!k) return;
+  const st = G.S.settings; st.vol = st.vol || {}; st.vol[k] = +e.target.value / 100; setVolume(k, st.vol[k]);
+});
+$('#sheetBody').addEventListener('change', e => {
+  const k = e.target.dataset && e.target.dataset.vol; if (!k) return;
+  if (k === 'sfx') sfx.collect();
+  G.save();
+});
 function liveUpdate() {
   let rerender = false;
   document.querySelectorAll('#sheetBody [data-end]').forEach(el => {
@@ -308,8 +336,11 @@ function startPlacing(t, move = null) {
   updateGhost();
   const repeat = !move && ['field', 'path', 'decor'].includes(b.kind);
   setModeBar(`<span style="font-size:22px">${b.icon}</span><span class="msg">${move ? 'Move' : 'Place'} ${b.name} · drag it into position${move && G.moveLimited(move) ? '<br><small>Once moved, it can move again in 1 hour</small>' : ''}</span>
+    ${canFlip(t) ? '<button class="btn alt" data-act="flip" aria-label="Flip">⇋ Flip</button>' : ''}
     <button class="btn" data-act="confirmPlace">✔ ${move ? 'Move here' : 'Place'}</button><button class="btn alt" data-act="cancelPlace">${repeat ? 'Done' : 'Cancel'}</button>`);
 }
+// mirror image: only for square buildings (a mirrored 2×3 would no longer match its squares), never the windmill
+function canFlip(t) { const b = BUILD[t]; return b.w === b.h && t !== 'windmill' && !['field', 'path', 'obstacle', 'pen'].includes(b.kind); }
 function nearestFree(t, x0, y0) {
   for (let r = 0; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
     if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
@@ -326,13 +357,19 @@ function confirmPlace() {
     toast(why === 'crowded' ? 'Too close to another building. Leave one square of space between buildings.' : why === 'edge' ? "That's off the edge of your land" : "Can't place there. Something's in the way.");
     return;
   }
-  if (g.move) { sfx.build(); G.moveObj(g.move, g.x, g.y); cancelPlace(); return; }
+  if (g.move) {
+    sfx.thunk(); haptic(true);
+    G.moveObj(g.move, g.x, g.y);
+    if (g.proto.flip) g.move.flip = true; else delete g.move.flip;
+    landFx(g.move); cancelPlace(); G.save(); return;
+  }
   const block = G.buyBlock(g.t);
   if (block) { sfx.error(); toast(block); return; }
   G.pay(g.t);
-  sfx.build();
+  sfx.build(); setTimeout(() => sfx.thunk(), 60); haptic(true);
   const o = G.addObj(g.t, g.x, g.y);
-  o.builtAt = Date.now();
+  if (g.proto.flip) o.flip = true;
+  o.builtAt = Date.now(); landFx(o);
   floater(o.x + BUILD[g.t].w / 2, o.y + BUILD[g.t].h / 2, '✨ Built!', '#FFFFFF');
   G.addXP(BUILD[g.t].kind === 'path' ? 0 : 1);
   refreshHud();
@@ -343,6 +380,11 @@ function confirmPlace() {
   cancelPlace();
 }
 function cancelPlace() { view.ghost = null; setModeBar(null); }
+// a moved building lands with a little squash and a puff of dust
+function landFx(o) {
+  Object.defineProperty(o, '_squish', { value: performance.now(), writable: true, configurable: true, enumerable: false });
+  Object.defineProperty(o, '_landed', { value: Date.now(), writable: true, configurable: true, enumerable: false });
+}
 
 // ---------- actions (buttons with data-act) ----------
 function act(el) {
@@ -354,7 +396,7 @@ function act(el) {
     case 'showme': { const q = QUEST_BY_ID[d.q]; goTo(q && guideFor(q, q.goals[+d.g]), q && q.goals[+d.g].label); return; }
     case 'claimChapter': {
       const c = Q.claimChapter(d.id); if (!c) break;
-      sfx.levelUp(); confetti();
+      sfx.fanfare(); confetti(); haptic(true);
       modal(`<div class="chapterhead">Chapter ${c.n} complete</div><h2>${c.title}</h2>${talkHead(c.who)}<div class="say">${c.end}</div>
         <div class="rewardrow"><span class="sub" style="margin:0">Chapter reward</span>${rewardLine(c.reward)}</div><button class="btn wide" data-act="closeModal">On to the next chapter!</button>`);
       G.save(); refreshHud(); return;
@@ -427,10 +469,11 @@ function act(el) {
       closeSheet(); break;
     }
     case 'deliver': {
-      const items = { ...(G.S.orders[+d.i]?.items || {}) };
+      const items = { ...(G.S.orders[+d.i]?.items || {}) }, who = G.S.orders[+d.i]?.who;
       const r = G.deliver(+d.i);
       if (r) {
-        sfx.deliver();
+        { const T = todayLog(); if (who && !T.people.includes(who)) T.people.push(who); }
+        sfx.deliver(); haptic(true);
         const fair = E.fairCount(items);
         toast(`${r.rushed ? 'Rush delivery! ' : 'Delivered! '}+${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}${fair ? ` · +${fair} toward the ${E.fairName()}` : ''}`);
         foundKeepsake(E.rollKeepsake('deliver'));
@@ -466,10 +509,14 @@ function act(el) {
       modal(`<h2>Start over?</h2><p>This erases your farm on this device. It can't be undone.</p>
         <div class="row" style="justify-content:center"><button class="btn red" data-act="resetYes">Erase and restart</button><button class="btn alt" data-act="closeModal">Keep my farm</button></div>`);
       return;
-    case 'resetYes': G.resetGame(); afterLoad(); closeModal(); closeSheet(); toast('A fresh start in Pelham Acres'); return;
+    case 'resetYes': G.resetGame(); G.S.tut = 0; afterLoad(); closeModal(); closeSheet(); toast('A fresh start in Pelham Acres'); return;
+    case 'tutNext': tutAdvance(); return;
+    case 'tutDone': tutDone(); return;
+    case 'tutReplay': tutReplay(); return;
+    case 'flip': { const g = view.ghost; if (g) { g.proto.flip = !g.proto.flip; sfx.tap(); haptic(); } return; }
     case 'toggle':
-      G.S.settings[d.k] = d.k === 'hints' ? G.S.settings.hints === false : !G.S.settings[d.k];
-      if (d.k === 'music') setMusic(G.S.settings.music); else if (d.k === 'sfx') setSfx(G.S.settings.sfx); else applyGuide();
+      G.S.settings[d.k] = d.k === 'hints' || d.k === 'haptics' ? G.S.settings[d.k] === false : !G.S.settings[d.k];
+      if (d.k === 'music') setMusic(G.S.settings.music); else if (d.k === 'sfx') setSfx(G.S.settings.sfx); else if (d.k === 'haptics') haptic(); else applyGuide();
       sfx.tap(); refreshSoundBtn(); break;
   }
   G.save(); refreshHud(); renderSheet();
@@ -479,7 +526,7 @@ function act(el) {
 // ---------- object interactions ----------
 function collectProducer(o) {
   const { got, full } = G.collectJobs(o);
-  if (got.length) sfx.collect();
+  if (got.length) { sfx.collect(); haptic(); }
   got.forEach((j, i) => setTimeout(() => { floater(o.x + 1, o.y + 1, `+${j.n}`, '#fff', j.out); flyTo(o.x + 1, o.y + 1, j.out, '[data-tb=barn]', j.n); }, i * 150));
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got.length;
@@ -487,7 +534,7 @@ function collectProducer(o) {
 function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : sfx.baa)(); }
 function collectPen(o) {
   const { got, full } = G.collectAnimals(o);
-  if (got) { const pr = G.penAnimal(o).product; sfx.collect(); floater(o.x + 1, o.y + 1, `+${got}`, '#fff', pr); flyTo(o.x + 1, o.y + 1, pr, '[data-tb=barn]', got); penCheer(o, 'collect'); }
+  if (got) { const pr = G.penAnimal(o).product; sfx.collect(); haptic(); floater(o.x + 1, o.y + 1, `+${got}`, '#fff', pr); flyTo(o.x + 1, o.y + 1, pr, '[data-tb=barn]', got); penCheer(o, 'collect'); }
   if (o.animals.length) animalSound(o);
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got;
@@ -528,7 +575,7 @@ function flyFrom(source, gx, gy, id, n = 1) {
 }
 function collectHouse(o) {
   const c = G.collectRent(o);
-  if (c) { sfx.coin(); floater(o.x + 1, o.y + 1, `+${c}`, '#FFE9A8', 'coin'); flyTo(o.x + 1, o.y + 1, 'coin', '#coins', 4); }
+  if (c) { sfx.coin(); haptic(); floater(o.x + 1, o.y + 1, `+${c}`, '#FFE9A8', 'coin'); flyTo(o.x + 1, o.y + 1, 'coin', '#coins', 4); }
   return c;
 }
 
@@ -536,18 +583,24 @@ function collectHouse(o) {
 const PET_COOLDOWN = 90000;
 function petCat(c) {
   const S = G.S; S.pets = S.pets || {};
+  if (c.gift) return napGift(c);
   const ready = now() - (S.pets[c.id] || 0) > PET_COOLDOWN;
+  haptic();
   if (c.id === 'ollie') {
     sfx.meow(true);
     if (!ready) { floater(c.x, c.y, '😴 too comfy', '#FFFFFF'); toast('Ollie is too comfy to move right now.'); return; }
     S.pets.ollie = now();
     S.coins += 3;
     G.stat('pet'); G.stat('pet:ollie');
+    c.react = { until: performance.now() + 3200, dur: 3200 }; c.nap = false; c.path = null;   // rolls over, belly up
     setTimeout(() => sfx.purr(), 500);
     floater(c.x, c.y, '💛 purrr  +3🪙', '#FFE9A8');
     toast('Ollie rolls over for belly rubs. What a big, happy boy.');
   } else {
-    c.zoomUntil = performance.now() + 4500; c.pause = 0; catGo(c, true);
+    // a playful pounce at your hand, then off on a lap of the farm
+    c.react = { until: performance.now() + 1500, dur: 1500 }; c.path = null;
+    c.zoomUntil = performance.now() + 1500 + 4500; c.pause = 0;
+    setTimeout(() => catGo(c, true), 1500);
     sfx.zoomies();
     if (!ready) { floater(c.x, c.y, '⚡ zoom!', '#FFFFFF'); toast('Milo is far too busy chasing a butterfly 🦋'); return; }
     S.pets.milo = now();
@@ -558,6 +611,54 @@ function petCat(c) {
     else { floater(c.x, c.y, '⚡ zoomies!', '#FFFFFF'); toast('Milo does a lap of the whole farm at top speed.'); }
   }
   setTimeout(() => foundKeepsake(E.rollKeepsake('pet')), 1200);
+  G.save(); refreshHud();
+}
+// Once a day one of the cats curls up somewhere on the farm (a crop row, the bench, beside a building)
+// with a sparkle over him. Find him and tap him for a little gift.
+const dayKey = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+const bootAt = performance.now();
+function napSpots() {
+  const out = [], inTown = (x, y) => x >= 8 && y >= 8 && x <= 22 && y <= 22;
+  for (const o of G.S.objs) {
+    const b = BUILD[o.t];
+    if (o.t === 'field') out.push({ x: o.x, y: o.y, where: o.crop ? `in the ${nm(o.crop).toLowerCase()} field` : 'in a field' });
+    else if (o.t === 'bench') out.push({ x: o.x, y: o.y, where: 'on the bench' });
+    else if (o.t === 'flowers') out.push({ x: o.x, y: o.y, where: 'in the flower bed' });
+    else if (SHELTERED.includes(b.kind)) {
+      // the sunny patch just in front of a building
+      for (const [x, y] of [[o.x + b.w, o.y + b.h - 1], [o.x + b.w - 1, o.y + b.h]]) if (!G.objAt(x, y)) out.push({ x, y, where: `by the ${b.name}` });
+    }
+  }
+  return out.filter(s => inTown(s.x, s.y));
+}
+const SHELTERED = ['producer', 'house', 'storage', 'pen', 'civic'];
+function planNap() {
+  const S = G.S, h = new Date().getHours();
+  if (S.napDay === dayKey() || cats.some(c => c.napAt) || h < 8 || h >= 21 || performance.now() - bootAt < 45000 || inTutorial()) return;
+  const spots = napSpots(); if (!spots.length) return;
+  const c = cats[new Date().getDate() % 2], s = spots[Math.floor(Math.random() * spots.length)];
+  c.napAt = { x: s.x + 0.5, y: s.y + 0.5, where: s.where }; c.path = null; c.napTried = false; c.react = null; c.gift = false;
+}
+function napGift(c) {
+  const S = G.S, L = S.level;
+  sfx.meow(c.fat); setTimeout(() => sfx.collect(), 300); haptic();
+  const coins = 10 + L * 4; S.coins += coins;
+  const finds = Object.keys(CROPS).filter(k => CROPS[k].lvl <= L).concat(['wood', 'stone', 'planks']);
+  const id = finds[Math.floor(Math.random() * finds.length)], n = 1 + (Math.random() < 0.5 ? 1 : 0);
+  const gotItem = G.addItem(id, n), hg = Math.random() < 0.12;
+  if (hg) S.hg += 1;
+  floater(c.x, c.y, `+${coins}`, '#FFE9A8', 'coin');
+  if (gotItem) setTimeout(() => floater(c.x, c.y - 0.3, `+${n}`, '#fff', id), 350);
+  const where = c.napAt.where;
+  c.napAt = null; c.gift = false; c.nap = false; c.path = null; c.pause = performance.now() + 1500;
+  c.react = { until: performance.now() + 2200, dur: 2200 };
+  S.napDay = dayKey(); G.stat('napGift');
+  modal(`<div class="bigart">${IMG(`sprites/${c.fat ? 'ollie-sleep' : 'milo-sleep'}.webp`, '🐈', 'bigimg')}</div><h2>You found ${c.name}!</h2>
+    <p>${c.name} was napping ${esc(where)}. He stretches, yawns, and nudges a little something toward you.</p>
+    <div class="rewardrow"><span class="chips"><span class="chip">🪙 ${coins}</span>${gotItem ? `<span class="chip">${art(id)} ${n}</span>` : ''}${hg ? `<span class="chip">⏳ 1</span>` : ''}</span></div>
+    <p class="sub">One of the cats naps somewhere new every day. Look for the sparkle.</p>
+    <button class="btn wide" data-act="closeModal">Good kitty</button>`);
+  setTimeout(() => foundKeepsake(E.rollKeepsake('pet')), 1500);
   G.save(); refreshHud();
 }
 // a keepsake turned up: a little celebration, and it goes into the Scrapbook
@@ -596,7 +697,7 @@ function tapObject(o) {
 function harvestField(o) {
   const c = o.crop, r = G.harvest(o);
   if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
-  if (r) sfx.harvest();
+  if (r) { sfx.harvest(); haptic(); }
   if (r) { floater(o.x + 0.5, o.y + 0.5, `+${r.n}`, r.n > CROP_YIELD ? '#FFE9A8' : '#fff', c); flyTo(o.x + 0.5, o.y + 0.5, c, '[data-tb=barn]', 2); }
   if (r) { const k = E.rollKeepsake('harvest'); if (k) setTimeout(() => foundKeepsake(k), 500); }
   return !!r;
@@ -785,21 +886,46 @@ function ordersSheet() {
         <button class="btn alt sm" data-act="skip" data-i="${i}">Skip</button><button class="btn ${ok ? '' : 'off'}" data-act="deliver" data-i="${i}">Deliver</button></div></div>`;
   }).join('') + '</div>';
 }
+// one settings row: label on the left, a slider or an on/off switch on the right
+const volOf = k => { const v = G.S.settings.vol; return v && typeof v[k] === 'number' ? v[k] : 1; };
+const slideRow = (k, label, icon, on) => `<div class="setrow">${ui(icon, '')}<span class="setlbl">${label}</span>
+  <input type="range" class="slider ${on ? '' : 'dim'}" min="0" max="100" step="5" value="${Math.round(volOf(k) * 100)}" data-vol="${k}" aria-label="${label} volume"></div>`;
+const switchRow = (k, label, icon, on, note) => `<div class="setrow">${ui(icon, '')}<span class="setlbl">${label}${note ? `<small>${note}</small>` : ''}</span>
+  <button class="switch ${on ? 'on' : ''}" data-act="toggle" data-k="${k}" role="switch" aria-checked="${on}"><i></i></button></div>`;
+function saveStatus() {
+  if (C.cloudEnabled() && C.signedIn()) {
+    const t = C.lastSync();
+    return `<div class="savestat ok">${ui('lock', '')}<div><b>Saved to the cloud${t ? ` ${fmtT(now() - t)} ago` : ''} ✓</b><small>Signed in as ${esc(C.userEmail())}</small></div></div>`;
+  }
+  return `<div class="savestat">${ui('barn', '')}<div><b>Saved on this device ✓</b><small>Sign in below to keep your farm safe in the cloud.</small></div></div>`;
+}
 function menuSheet() {
   const S = G.S, st = S.settings;
-  return `<p><b>${S.town}</b> · Level ${S.level} · ${S.delivered || 0} orders delivered · ${S.cleared || 0} spots cleared</p>
-    <p class="sub">Town charm: ${G.charm()}. No ads, no purchases — ever. Hourglasses are earned by leveling up and by every 5th delivery.</p>
-    <h3>Help</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="hints">Hints and arrows: ${st.hints === false ? 'Off' : 'On'}</button></div>
-    <h3>Sound</h3><div class="row"><button class="btn alt sm" data-act="toggle" data-k="music">Music: ${st.music ? 'On' : 'Off'}</button>
-    <button class="btn alt sm" data-act="toggle" data-k="sfx">Sound effects: ${st.sfx ? 'On' : 'Off'}</button></div>
-    <p class="sub">No sound? Turn the volume up and tap the map once. You can also tap 🔊 in the top corner.</p>
-    <h3>Mastery</h3>${masteryList()}
+  return `<div class="parch">
+    <p style="margin:0"><b>${S.town}</b> · Level ${S.level} · ${S.delivered || 0} order${S.delivered === 1 ? '' : 's'} delivered · ${S.cleared || 0} spot${S.cleared === 1 ? '' : 's'} cleared</p>
+    <p class="sub" style="margin:4px 0 0">Town charm: ${G.charm()}. No ads, no purchases, ever.</p></div>
+    <h3>Settings</h3>
+    <div class="setbox">
+      ${switchRow('music', 'Music', 'sound', st.music)}
+      ${slideRow('music', 'Music volume', 'sound', st.music)}
+      ${switchRow('sfx', 'Sound effects', 'sound', st.sfx)}
+      ${slideRow('sfx', 'Effects volume', 'sound', st.sfx)}
+      ${slideRow('amb', 'Birdsong and crickets', 'blossom', st.sfx)}
+      ${switchRow('haptics', 'Vibration', 'heart', st.haptics !== false, 'A light tap you can feel, where your device supports it')}
+      ${switchRow('hints', 'Hints and arrows', 'bulb', st.hints !== false)}
+    </div>
+    <div class="row" style="margin-top:8px"><button class="btn alt sm" data-act="tutReplay">${ui('scroll', '')} Replay Hattie's tour</button></div>
+    <p class="sub">No sound? Turn the iPad's volume up and tap the map once.</p>
+    <h3>Your farm is saved</h3>${saveStatus()}
     ${cloudHtml()}
+    <h3>Mastery</h3>${masteryList()}
     <h3>Backup code</h3><p class="sub">You can also copy this code to keep a backup, or paste one to restore.</p>
     <textarea id="saveText" placeholder="Save code"></textarea><div class="row" style="margin-top:8px">
     <button class="btn alt sm" data-act="export">Copy save code</button><button class="btn alt sm" data-act="import">Load pasted code</button></div>
     <h3>Danger zone</h3><button class="btn red sm" data-act="reset">Start a new farm</button>
-    <p class="sub" style="margin-top:16px">Version ${APP_VERSION}</p>`;
+    <div class="credits"><b>Pelham Acres</b> · version ${APP_VERSION}<br>
+      Starring Ollie and Milo, the best farm cats in the valley.<br>
+      <small>Paintings and music made with AI tools. Code by Claude.</small></div>`;
 }
 // ---------- cloud saves ----------
 let cloudStep = 'email', cloudEmailVal = '', cloudBusy = false;
@@ -1137,9 +1263,93 @@ function questTick() {
   }
   const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length + E.extrasNotice() + CHAPTERS.filter(Q.chapterReady).length;
   b.hidden = !n; b.textContent = n;
-  if ($('#modal').hidden && !levelQueue.length) { const u = Q.unseen()[0]; if (u) questIntro(u); }
+  if ($('#modal').hidden && !levelQueue.length && !inTutorial()) { const u = Q.unseen()[0]; if (u) questIntro(u); }
+  tutTick();
   applyGuide();
 }
+
+// ---------- first-play tour: Mayor Hattie walks you through the basics by doing them ----------
+// G.S.tut is the step number while the tour runs (missing on older farms = never shown).
+const TUT_END = 99;
+const inTutorial = () => G.S.tut != null && G.S.tut < TUT_END;
+const harvestTotal = () => Object.entries(G.S.stats || {}).reduce((s, [k, v]) => s + (k.startsWith('harvest:') ? v : 0), 0);
+const sheetTitle = () => !$('#sheet').classList.contains('open') ? '' : $('#sheetTitle').textContent;
+let tutLast = '';
+// what Hattie says right now, what to point at, and whether this step is finished
+function tutStep() {
+  const S = G.S, step = S.tut;
+  const fields = S.objs.filter(o => o.t === 'field');
+  if (step === 0) return { say: "Welcome to Pelham Acres! I'm Mayor Hattie. Let me show you around the farm. It only takes a minute.", btn: ['tutNext', 'Show me around'] };
+  if (step === 1) {
+    const planted = fields.some(o => o.crop);
+    if (planted && !view.plantCrop) return { done: true };
+    if (view.plantCrop) return { say: 'Now drag your finger across the empty fields to plant them all. Tap <b>Done</b> when you\'re finished.' };
+    if (sheetTitle() === 'Plant a crop') return { say: 'Pick <b>Wheat</b>. It grows fast, and everyone in town needs it.' };
+    return { say: "Let's grow something! Tap one of the empty fields.", obj: fields.find(o => !o.crop) };
+  }
+  if (step === 2) {
+    if (harvestTotal() > (S.tutBase || 0)) return { done: true };
+    const ripe = fields.find(o => o.crop && G.fieldReady(o));
+    if (ripe) return { say: 'Your crop is ripe! Tap it, or drag across all the fields to harvest them in one go.', obj: ripe };
+    return { say: "I asked the sun to hurry this first batch along. It'll be ready in a few seconds…", obj: fields.find(o => o.crop) };
+  }
+  if (step === 3) {
+    const mill = G.findObj('feedMill');
+    if (!mill || mill.jobs.length || G.getStat('make:chickenFeed') > (S.tutBase || 0)) return { done: true };
+    if (sheetTitle() === BUILD.feedMill.name) return { say: 'Tap <b>Chicken Feed</b> to start a batch. It uses wheat and corn from your barn.' };
+    return { say: 'Your harvest goes into the barn. Now let\'s turn it into something useful. Tap the <b>Feed Mill</b>.', obj: mill };
+  }
+  if (step === 4) {
+    if ((S.delivered || 0) > (S.tutBase || 0)) return { done: true };
+    const can = G.readyOrders() > 0;
+    if (sheetTitle() === 'Orders') return can ? { say: 'Find an order with every item ticked green, then tap <b>Deliver</b>.' }
+      : { say: "You can't fill an order just yet. That's alright! Grow a little more and come back to them later.", btn: ['tutNext', 'Got it'] };
+    return { say: 'Townsfolk post orders for things they need. Tap <b>Orders</b>. Every delivery pays coins and makes you a friend.', tb: 'orders' };
+  }
+  return { say: "That's the farm in a nutshell! Whenever you're not sure what to do next, read the hint at the bottom of the screen. The yellow arrow points the way. See you in town!", btn: ['tutDone', 'Thanks, Hattie!'] };
+}
+function tutAdvance() {
+  const S = G.S;
+  S.tut++;
+  if (S.tut === 2) {
+    // the very first crop grows in seconds, so the tour doesn't stall
+    for (const o of S.objs) if (o.t === 'field' && o.crop && o.end - now() > 12000) { o.start = now(); o.end = now() + 12000; }
+    S.tutBase = harvestTotal();
+  } else if (S.tut === 3) S.tutBase = G.getStat('make:chickenFeed');
+  else if (S.tut === 4) {
+    S.tutBase = S.delivered || 0;
+    // make sure there's an order a brand-new farmer can actually fill: Hattie wants some of that first wheat
+    const w = G.have('wheat');
+    if (!G.readyOrders() && w > 0) S.orders[0] = { who: 'The Mayor', pid: 'hattie', why: 'is baking you a welcome-to-town pie', items: { wheat: Math.min(3, w) }, rush: 0, coins: 25, xp: 5 };
+  }
+  sfx.collect(); haptic();
+  G.save(); tutTick();
+}
+function tutTick() {
+  const el = $('#coach');
+  if (!inTutorial()) { if (!el.hidden) { el.hidden = true; tutLast = ''; } return; }
+  let st = tutStep();
+  if (st.done) { tutAdvance(); return; }
+  const n = G.S.tut, total = 5;
+  const html = `${IMG('sprites/p-hattie.webp', '👩‍🦳', 'coachface')}<div class="coachbody">
+    <div class="coachname">Mayor Hattie <span class="coachstep">${n ? `${Math.min(n, total)} of ${total}` : ''}</span></div>
+    <div class="coachsay">${st.say}</div>
+    <div class="coachbtns">${st.btn ? `<button class="btn sm" data-act="${st.btn[0]}">${st.btn[1]}</button>` : ''}
+    ${n < 5 ? '<button class="linkbtn" data-act="tutDone">Skip the tour</button>' : ''}</div></div>`;
+  if (html !== tutLast) {
+    el.innerHTML = html; tutLast = html; el.hidden = false;
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+  }
+  tutGuide = st.obj ? { text: '', obj: st.obj } : st.tb ? { text: '', tb: st.tb } : null;
+}
+let tutGuide = null;
+function tutDone() {
+  G.S.tut = TUT_END; tutGuide = null; tutTick(); sfx.close(); G.save(); applyGuide();
+}
+function tutReplay() {
+  closeSheet(); G.S.tut = 0; G.S.tutBase = 0; tutTick(); applyGuide();
+}
+$('#coach').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) act(a); });
 
 // ---------- guidance: an arrow + hint for the next step of your quests ----------
 function makerOf(item) {
@@ -1200,6 +1410,7 @@ function goTo(g, label) {
   toast(g.text);
 }
 function computeGuide() {
+  if (inTutorial()) return tutGuide;
   if (view.pinGuide && view.pinGuide.until > now()) return view.pinGuide;
   view.pinGuide = null;
   if (G.S.settings.hints === false) return null;
@@ -1212,7 +1423,7 @@ function applyGuide() {
   const g = computeGuide();
   view.guide = g && (g.obj || g.walker) ? g : null;
   const h = $('#hint');
-  if (!g || view.ghost || view.plantCrop) { h.hidden = true; }
+  if (!g || view.ghost || view.plantCrop || inTutorial()) { h.hidden = true; }
   else { h.hidden = false; setHTML(h, ui('bulb', '💡') + ' ' + esc(g.text)); }
   document.querySelectorAll('.tb').forEach(b => b.classList.toggle('pulse', !!g && g.tb === b.dataset.tb));
 }
@@ -1291,7 +1502,13 @@ cv.addEventListener('pointermove', e => {
   if (key === gest.last) return;
   gest.last = key;
   const o = G.objAt(tl.x, tl.y);
-  if (gest.mode === 'ghost') { const g = view.ghost; g.x = tl.x - gest.ox; g.y = tl.y - gest.oy; updateGhost(); }
+  if (gest.mode === 'ghost') {
+    const g = view.ghost, nx = tl.x - gest.ox, ny = tl.y - gest.oy;
+    if (nx !== g.x || ny !== g.y) {   // snapped onto a new square: a soft tick, and a buzz when it turns from red to green
+      const was = g.ok; g.x = nx; g.y = ny; updateGhost(); sfx.tick();
+      if (g.ok && !was) haptic();
+    }
+  }
   else if (gest.mode === 'plant' && o && o.t === 'field' && !o.crop && view.plantCrop) { tryPlant(o); refreshHud(); }
   else if (gest.mode === 'harvest' && o && o.t === 'field' && G.fieldReady(o)) { if (!harvestField(o)) gest.mode = 'done'; refreshHud(); }
 });
@@ -1324,7 +1541,7 @@ function onTap(sx, sy) {
 }
 
 // ---------- boot ----------
-function afterLoad() { G.refreshOrders(); cam.z = innerWidth < 600 ? 0.8 : 1; centerOn(14, 13); refreshHud(); }
+function afterLoad() { lastCoins = null; G.refreshOrders(); cam.z = innerWidth < 600 ? 0.8 : 1; centerOn(14, 13); refreshHud(); }
 initRender(cv);
 loadSprites();
 setCatGrid(G.objAt, c => {
@@ -1371,11 +1588,7 @@ $('#soundBtn').addEventListener('click', () => {
 });
 refreshSoundBtn();
 if (!loaded) {
-  modal(`<div style="font-size:54px">🌾</div><h2>Welcome to Pelham Acres</h2>
-    <p>Grow crops, raise animals, make goods, and turn this little farm into a thriving country town.</p>
-    <p class="sub">Tap a ready field to harvest, or drag across several. Tap empty fields to plant. Pinch to zoom, drag to look around.</p>
-    <p class="sub">🐈 Ollie and Milo, the farm cats, live here too. Give them a tap now and then.</p>
-    <button class="btn wide" data-act="closeModal">Let's farm!</button>`);
+  G.S.tut = 0; G.save();   // brand-new farm: Mayor Hattie's tour starts
 } else {
   const away = now() - (G.S.saved || now());
   if (away > 120000) setTimeout(() => showAway(away), 700);
@@ -1386,6 +1599,52 @@ if (C.cloudEnabled() && location.hash.length > 1) {
   C.consumeRedirect().then(u => { if (u) { toast(`Signed in as ${u.email} ☁️`); return cloudCheck(true); } })
     .catch(e => toast(`Sign-in link: ${e.message}. Try sending a new one from Menu → Cloud save.`));
 } else if (C.cloudEnabled() && C.signedIn()) setTimeout(() => cloudCheck(false).catch(() => {}), 1500);
+// ---------- "Today on the farm": a little summary at sunset ----------
+function todayLog() {
+  const S = G.S, d = dayKey();
+  if (!S.today || S.today.day !== d) S.today = { day: d, harvest: 0, make: 0, deliver: 0, build: 0, fed: 0, coins: 0, people: [] };
+  return S.today;
+}
+G.hooks.onStat = (k, n = 1) => {
+  const T = todayLog();
+  if (k.startsWith('harvest:')) T.harvest += n;
+  else if (k.startsWith('make:')) T.make += n;
+  else if (k === 'deliver') T.deliver++;
+  else if (k === 'build') T.build++;
+  else if (k === 'feed') T.fed += n;
+};
+var lastCoins = null;   // var: afterLoad() resets it during boot, before this line has run
+function trackCoins() {   // coins earned today = every rise in the purse (spending doesn't count against it)
+  const c = G.S.coins;
+  if (lastCoins != null && c > lastCoins) todayLog().coins += c - lastCoins;
+  lastCoins = c;
+}
+const hourNow = () => view.debugHour != null ? view.debugHour : new Date().getHours() + new Date().getMinutes() / 60;
+function sunsetCheck() {
+  const S = G.S, h = hourNow(), T = todayLog();
+  if (h < 19.5 || S.recapDay === T.day || inTutorial() || !$('#modal').hidden || levelQueue.length || view.ghost || sheetFn) return;
+  if (T.harvest + T.make + T.deliver + T.build + T.fed < 3) return;   // barely played today: no need
+  S.recapDay = T.day; G.save();
+  showRecap(T);
+}
+function showRecap(T) {
+  const line = (ic, txt) => `<div>${ic}<span>${txt}</span></div>`, pl = (n, w) => `${fmtN(n)} ${w}${n === 1 ? '' : 's'}`;
+  const rows = [];
+  if (T.harvest) rows.push(line(ui('field', '🌾'), `Harvested <b>${pl(T.harvest, 'crop')}</b>`));
+  if (T.make) rows.push(line(ui('gear', '⚙️'), `Made <b>${pl(T.make, 'good')}</b> in your workshops and pens`));
+  if (T.fed) rows.push(line(ui('heart', '❤️'), `Fed <b>${pl(T.fed, 'hungry animal')}</b>`));
+  if (T.deliver) rows.push(line(ui('mail', '✉️'), `Delivered <b>${pl(T.deliver, 'order')}</b>${T.people.length ? ` to ${esc(listJoin(T.people.slice(0, 4)))}${T.people.length > 4 ? ' and more' : ''}` : ''}`));
+  if (T.build) rows.push(line(ui('hammer', '🔨'), `Built <b>${pl(T.build, 'new thing')}</b>`));
+  if (T.coins) rows.push(line(ui('coin', ''), `Earned <b>${fmtN(T.coins)} coins</b>`));
+  const close = ['Ollie has already claimed the warmest spot by the stove.', 'Milo is finally, finally sitting still.', 'The crickets are tuning up for the evening.', 'The lamps are coming on all over town.'];
+  sfx.open();
+  modal(`<div class="recapart"><img src="icons/share.jpg" alt=""></div><h2>Today on the farm</h2>
+    <div class="awaylist recap">${rows.join('')}</div>
+    <p class="sub">${close[new Date().getDate() % close.length]} Pelham Acres had a good day.</p>
+    <button class="btn wide" data-act="closeModal">Goodnight, Pelham Acres</button>`);
+}
+const listJoin = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+
 // ---------- "While you were away" ----------
 // Everything that finished while the game was closed, with one button to gather the simple pickups.
 function readyReport() {
@@ -1455,7 +1714,26 @@ function frame(ts) {
 requestAnimationFrame(frame);
 // started fine: stand down the start-up safety net
 window.__booted = true; { const bf = document.getElementById('bootFail'); if (bf) bf.hidden = true; }
-setInterval(() => { refreshHud(); liveUpdate(); if ($('#exp').hidden) questTick(); else updateEnergy(); }, 500);
+// loading screen: fill the bar as the pictures arrive, then fade away (at most ~5s, at least a moment to see it)
+{
+  const sp = $('#splash'), bar = $('#splashBar'), msg = $('#splashMsg'), t0 = performance.now();
+  const lines = ['Waking up Ollie…', 'Milo is doing zoomies…', 'Watering the wheat…', 'Ringing the town bell…', 'Feeding the chickens…'];
+  let li = 0;
+  const msgT = setInterval(() => { li = (li + 1) % lines.length; msg.textContent = lines[li]; }, 900);
+  const step = () => {
+    const p = spriteProgress(), el = performance.now() - t0;
+    bar.style.width = Math.max(8, Math.round(p * 100)) + '%';
+    if ((p >= 0.97 && el > 600) || el > 5000) {
+      bar.style.width = '100%'; clearInterval(msgT);
+      setTimeout(() => { sp.classList.add('gone'); setTimeout(() => sp.remove(), 700); }, 200);
+      return;
+    }
+    setTimeout(step, 120);
+  };
+  if (sp) step();
+}
+setInterval(() => { refreshHud(); liveUpdate(); trackCoins(); if ($('#exp').hidden) questTick(); else updateEnergy(); }, 500);
+setInterval(() => { if (!$('#exp').hidden) return; planNap(); sunsetCheck(); }, 5000);
 setInterval(() => G.save(), 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); });
 addEventListener('pagehide', () => G.save());

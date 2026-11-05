@@ -32,6 +32,8 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<!-- painted loading screen; main.js fades it out once the farm is drawn -->
+<div id="splash"><div class="load"><span id="splashMsg">Waking up Ollie…</span><div class="lbar"><i id="splashBar"></i></div></div></div>
 <canvas id="game"></canvas>
 
 <div id="hud">
@@ -43,6 +45,7 @@
 </div>
 
 <button id="hint" hidden></button>
+<div id="coach" hidden role="dialog" aria-label="Mayor Hattie's tour"></div>
 <button id="soundBtn" class="pill" aria-label="Sound on or off"><img class="ui" src="sprites/icon-sound.webp" alt=""></button>
 
 <div id="toolbar">
@@ -81,7 +84,7 @@
   <p>This can happen right after an update. Your farm is safe.</p><button id="bootFix">Tap to refresh</button></div></div>
 <script>
   (function () {
-    function show() { if (window.__booted) return; var b = document.getElementById('bootFail'); if (b) b.hidden = false; }
+    function show() { if (window.__booted) return; var b = document.getElementById('bootFail'); if (b) b.hidden = false; var s = document.getElementById('splash'); if (s) s.style.display = 'none'; }
     setTimeout(show, 9000);
     window.addEventListener('error', function () { setTimeout(show, 2500); });
     window.addEventListener('unhandledrejection', function () { setTimeout(show, 2500); });

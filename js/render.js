@@ -20,7 +20,7 @@ const SPRITE_CFG = {
   flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 1, iso: 1 }, fountain: { k: 1, iso: 1 }, windmill: { k: 0.55, iso: 1 },
 };
 const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
-  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'milo', 'ollie-w1', 'ollie-w2', 'milo-r1', 'milo-r2', 'milo-sit','p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
+  'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'ollie-belly', 'milo', 'milo-sleep', 'milo-pounce', 'ollie-w1', 'ollie-w2', 'milo-r1', 'milo-r2', 'milo-sit','p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
   'soil', 'sprout', 'growing', ...Object.keys(CROPS).map(c => 'crop-' + c),
   'tex-grass', 'tex-forest', 'windmill-sails', ...['buttercup', 'violet', 'clover', 'pebbles', 'mushroom', 'dirt', 'dandelion', 'log', 'shrub', 'duck', 'mallard', 'butterfly1', 'butterfly2', 'bird'].map(n => 'dc-' + n),
   ...['hattie', 'joe', 'dottie', 'tom', 'rosa', 'finch', 'ellis'].flatMap(id => ['p-' + id + '-w1', 'p-' + id + '-w2'])];
@@ -34,6 +34,8 @@ export function loadSprites() {
   };
   for (const n of SPRITE_NAMES) load(n, 0);
 }
+// share of the map pictures that have arrived (for the loading screen)
+export function spriteProgress() { let n = 0; for (const k of SPRITE_NAMES) { const s = SPRITES[k]; if (!s || s.complete) n++; } return n / SPRITE_NAMES.length; }
 const spr = n => { const s = SPRITES[n]; return s && s.complete && s.naturalWidth ? s : null; };
 // draw an image with its bottom-centre at (cx, by), given width; flip mirrors horizontally
 function drawSprite(im, cx, by, w, flip, noShadow) {
@@ -858,7 +860,14 @@ export function draw() {
     drawObj(o, t);
   }
   while (ci < catQ.length) drawW(catQ[ci++]);
-  if (g) { ctx.globalAlpha = 0.75; drawObj({ ...g.proto, x: g.x, y: g.y }, t); ctx.globalAlpha = 1; }
+  if (g) {
+    // the building "held up" while you place it: floats a little above its squares and bobs gently;
+    // dimmer when it can't go there
+    const lift = 7 + Math.sin(pt / 260) * 2.5;
+    ctx.save(); ctx.translate(0, -lift); ctx.globalAlpha = g.ok ? 0.85 : 0.5;
+    drawObj({ ...g.proto, x: g.x, y: g.y }, t);
+    ctx.restore();
+  }
   drawLife(pt, tall, vis);
   drawLighting(pt, tall);
   for (const o of tall) drawStatus(o, BUILD[o.t], t);
@@ -907,13 +916,17 @@ function drawObj(o, t) {
     const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1];
     const lot = b.kind !== 'decor';
     if (lot) drawLot(o, b);
+    const land = landSquash(o);
+    if (land) { ctx.save(); ctx.translate(cx, by); ctx.scale(1 + land, 1 - land); ctx.translate(-cx, -by); }
     if (cfg.iso) {
       // contact shadow along the footprint, then the building with its front corner on the footprint's front corner
       poly(diamond(o.x, o.y, b.w, b.h), 'rgba(40,30,10,.18)');
-      const sw = footW(b) * cfg.k * squishOf(o), sh = drawSprite(sp, cx, by + 3 + (cfg.dy || 0), sw, false, true);
+      const sw = footW(b) * cfg.k * squishOf(o), sh = drawSprite(sp, cx, by + 3 + (cfg.dy || 0), sw, !!o.flip, true);
       if (o.t === 'windmill') drawSails(cx - sw / 2 + sw * 0.27, by + 3 - sh + sh * 0.31, footW(b) * 0.62, t);
+      if (land) ctx.restore();
       buildFx(o, b, cx, by, sh);
-    } else drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, false, lot);
+    } else { drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, !!o.flip, lot); if (land) ctx.restore(); }
+    landDust(o, b, cx, by);
     if (b.kind === 'station') drawTrain(o, b, t);
     if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
     return;
@@ -946,6 +959,23 @@ export function squishOf(o) {
   const s = o._squish; if (!s) return 1;
   const k = (performance.now() - s) / 380; if (k >= 1) { o._squish = 0; return 1; }
   return 1 + Math.sin(k * Math.PI) * 0.06 * (1 - k);
+}
+// set down (built or moved): a quick squash-and-stretch as it lands
+function landSquash(o) {
+  const t0 = o._landed; if (!t0) return 0;
+  const k = (Date.now() - t0) / 520; if (k >= 1) { o._landed = 0; return 0; }
+  return Math.sin(k * Math.PI * 2.2) * 0.09 * (1 - k) * (1 - k);
+}
+// ...with a low ring of dust at its feet (moves only; new buildings get the fuller buildFx)
+function landDust(o, b, cx, by) {
+  const t0 = o._landed; if (!t0 || o.builtAt && Date.now() - o.builtAt < 1400) return;
+  const k = (Date.now() - t0) / 520; if (k >= 1) return;
+  ctx.save(); ctx.fillStyle = '#E8DCC2';
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2, r = 14 + k * footW(b) * 0.5;
+    ctx.globalAlpha = (1 - k) * 0.5; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * r, by - 4 + Math.sin(a) * r * 0.45, 4 + k * 8, 0, 7); ctx.fill();
+  }
+  ctx.restore();
 }
 // just built: rises from the ground with a dust puff and sparkles (o.builtAt set when placed)
 function buildFx(o, b, cx, by, sh) {
@@ -988,6 +1018,10 @@ function drawLevelBadge(o, b) {
 function drawGhostFootprint(g) {
   const b = BUILD[g.t];
   poly(diamond(g.x, g.y, b.w, b.h), g.ok ? 'rgba(120,230,90,.45)' : 'rgba(240,80,60,.45)', g.ok ? '#3B6D11' : '#A32D2D');
+  // a soft glowing edge that breathes, so the spot reads clearly under the floating building
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+  ctx.save(); ctx.lineWidth = 2 + pulse * 2.5; ctx.strokeStyle = g.ok ? `rgba(220,255,190,${0.5 + pulse * 0.4})` : `rgba(255,200,190,${0.5 + pulse * 0.4})`;
+  poly(diamond(g.x, g.y, b.w, b.h), null, null); ctx.stroke(); ctx.restore();
 }
 
 // ---------- house cats: Ollie & Milo ----------
@@ -1010,6 +1044,17 @@ function updateCats(pt) {
   const dt = lastCatT ? Math.min(0.1, (pt - lastCatT) / 1000) : 0; lastCatT = pt;
   for (const c of cats) {
     unstick(c);
+    if (c.react && pt < c.react.until) continue;          // showing off after a pet: stay put
+    // the daily nap: walk to the chosen spot, then sleep there (with a little gift) until tapped
+    if (c.napAt) {
+      const at = Math.hypot(c.x - c.napAt.x, c.y - c.napAt.y) < 0.6;
+      if (c.gift) { c.nap = true; continue; }
+      if (at && !c.path) { c.gift = true; c.nap = true; continue; }
+      if (!c.path && !c.napTried) { c.napTried = true; if (!planTo(c, Math.floor(c.napAt.x), Math.floor(c.napAt.y), true)) { c.x = c.napAt.x; c.y = c.napAt.y; } }
+      const st = stepWalker(c, dt, c.speed);
+      if (st !== 'moving') { c.path = null; if (!at) { c.x = c.napAt.x; c.y = c.napAt.y; } }
+      continue;
+    }
     if (pt < c.pause) continue;
     const st = stepWalker(c, dt, c.speed * (pt < c.zoomUntil ? 2.2 : 1));
     if (st === 'moving') { c.nap = false; continue; }
@@ -1020,10 +1065,48 @@ function updateCats(pt) {
     catGo(c, pt < c.zoomUntil);
   }
 }
+// floating Zzz, and over a daily-nap cat a glowing gift bubble saying "tap me"
+function napExtras(c, px, py, pt) {
+  const zy = ((pt / 1200) % 1);
+  ctx.save();
+  ctx.globalAlpha = 1 - zy; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(60,40,20,.5)'; ctx.lineWidth = 2; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.strokeText('z', px + 12 + zy * 6, py - 26 - zy * 14); ctx.fillText('z', px + 12 + zy * 6, py - 26 - zy * 14);
+  ctx.restore();
+  if (c.gift) bubble(px - 2, py - 50, 'sparkle', { mode: 'ready', t: pt, seed: c.fat ? 0 : 2 });
+}
+// little hearts drifting up from a happy cat
+function catHearts(px, py, k, id) {
+  ctx.save();
+  for (let i = 0; i < 4; i++) {
+    const kk = (k * 1.6 + i * 0.22) % 1, a = 1 - kk;
+    const x = px + Math.sin(kk * 6 + i * 2 + (id === 'milo' ? 1 : 0)) * 10 + (i - 1.5) * 6, y = py - 30 - kk * 34;
+    ctx.globalAlpha = a; ctx.fillStyle = i % 2 ? '#F28BA0' : '#E8506E';
+    const s = 4 + (1 - kk) * 2;
+    ctx.beginPath(); ctx.moveTo(x, y + s); ctx.bezierCurveTo(x - s * 1.6, y - s * 0.2, x - s * 0.6, y - s * 1.4, x, y - s * 0.5);
+    ctx.bezierCurveTo(x + s * 0.6, y - s * 1.4, x + s * 1.6, y - s * 0.2, x, y + s); ctx.fill();
+  }
+  ctx.restore();
+}
 function drawCat(c, pt) {
   const [px, py] = P(c.x, c.y);
   const moving = isWalking(c, pt);
   const cim = spr(c.fat ? (c.nap ? 'ollie-sleep' : 'ollie') : 'milo');
+  const reacting = c.react && pt < c.react.until;
+  if (cim && (reacting || (c.nap && !c.fat))) {
+    // special poses: Ollie rolls over for belly rubs, Milo pounces; Milo curls up for his daily nap
+    const k = reacting ? (c.react.until - pt) / c.react.dur : 0;
+    let im = null, w = 34, lift = 0, rock = 0;
+    if (reacting && c.fat) { im = spr('ollie-belly'); w = 42; rock = Math.sin(pt / 160) * 0.06; }
+    else if (reacting) { im = spr('milo-pounce'); w = 26; lift = Math.abs(Math.sin(pt / 140)) * 6; }
+    else { im = spr('milo-sleep'); w = 28; }
+    im = im || cim;
+    if (rock) { ctx.save(); ctx.translate(px, py + 3); ctx.rotate(rock); ctx.translate(-px, -(py + 3)); }
+    drawSprite(im, px, py + 3 - lift, w + (c.nap ? Math.sin(pt / 700) * 0.6 : 0), c.face < 0);
+    if (rock) ctx.restore();
+    if (reacting) catHearts(px, py, 1 - k, c.id);
+    if (c.nap) napExtras(c, px, py, pt);
+    return;
+  }
   if (cim) {
     // Painted animation frames: Ollie waddles (two slow alternating steps), Milo gallops
     // (stretch / gather, fast) and sits up when he stops. Falls back to the still pose.
@@ -1046,11 +1129,7 @@ function drawCat(c, pt) {
     }
     const breathe = c.nap ? Math.sin(pt / 700) * 0.6 : (!moving ? Math.sin(pt / 900 + c.x) * 0.3 : 0);
     drawSprite(im, px, py + 3 - lift, w + breathe, c.face < 0);
-    if (c.nap) {
-      const zy = ((pt / 1200) % 1);
-      ctx.globalAlpha = 1 - zy; ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = 'rgba(60,40,20,.5)'; ctx.lineWidth = 2; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
-      ctx.strokeText('z', px + 12 + zy * 6, py - 26 - zy * 14); ctx.fillText('z', px + 12 + zy * 6, py - 26 - zy * 14); ctx.globalAlpha = 1;
-    }
+    if (c.nap) napExtras(c, px, py, pt);
     return;
   }
   ctx.save(); ctx.translate(px, py);

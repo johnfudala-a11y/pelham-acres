@@ -52,7 +52,7 @@ export function addFriend(pid, n) {
 export const friendGift = h => ({ coins: 60 * h + 15 * S.level, hg: h >= 3 ? 2 : 1 });
 
 // ---------- Stats (used by quests) ----------
-export function stat(k, n = 1) { S.stats = S.stats || {}; S.stats[k] = (S.stats[k] || 0) + n; hooks.onStat && hooks.onStat(k); }
+export function stat(k, n = 1) { S.stats = S.stats || {}; S.stats[k] = (S.stats[k] || 0) + n; hooks.onStat && hooks.onStat(k, n); }
 export const getStat = k => (S.stats && S.stats[k]) || 0;
 
 // ---------- Building levels & mastery ----------
