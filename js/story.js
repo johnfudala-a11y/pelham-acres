@@ -162,4 +162,18 @@ export const QUESTS = [
     reward: { coins: 400, xp: 80, items: { iron: 3 } } },
 ];
 export const QUEST_BY_ID = Object.fromEntries(QUESTS.map(q => [q.id, q]));
+
+// The story in chapters: finishing every quest in a chapter earns a chapter reward and a little epilogue.
+export const CHAPTERS = [
+  { id: 'c1', n: 1, title: 'A Fresh Start', who: 'hattie', quests: ['welcome', 'feed', 'coop', 'eggs', 'bakery', 'orders', 'cottage'],
+    end: "The farm is breathing again: hens clucking, bread in the oven, a family in the cottage. Pelham Acres has noticed you.", reward: { coins: 300, hg: 3, xp: 60 } },
+  { id: 'c2', n: 2, title: 'Waking the Town', who: 'tom', quests: ['workshop', 'cows', 'upgrades', 'townhall', 'dairy', 'mastery', 'ollieBench'],
+    end: "The Town Hall stands again, and folks have started stopping by just to see what you'll do next. Ollie approves.", reward: { coins: 700, hg: 4, xp: 150 } },
+  { id: 'c3', n: 3, title: 'Open for Business', who: 'finch', quests: ['train', 'store', 'festival', 'stew', 'icecream'],
+    end: "Trains whistle through, the store is busy, and the Harvest Festival is the talk of the county. Pelham Acres is on the map.", reward: { coins: 1400, hg: 5, xp: 300 } },
+  { id: 'c4', n: 4, title: 'Beyond the Tree Line', who: 'ellis', quests: ['miloMap', 'woods1', 'shed', 'hills1'],
+    end: "Thanks to one curious cat, the old hills and hollows are yours to explore, and Great-Aunt May's secrets are coming to light.", reward: { coins: 1200, hg: 5, xp: 250 } },
+  { id: 'c5', n: 5, title: 'A Town Reborn', who: 'hattie', quests: ['school', 'sweaters', 'fountainQ', 'clock'],
+    end: "The clock tower chimes over a living, laughing town. Whatever comes next, Pelham Acres is home, and so are you.", reward: { coins: 3000, hg: 8, xp: 600 } },
+];
 export const MAX_ACTIVE = 4;

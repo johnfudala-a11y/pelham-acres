@@ -22,8 +22,8 @@
 
 <div id="hud">
   <div class="pill lvl" id="lvlPill"><b id="lvl">1</b><div class="xpbar"><div id="xpfill"></div></div><small id="xptext"></small></div>
-  <div class="pill"><img class="ui" src="sprites/icon-coin.webp" alt="Coins"> <span id="coins">0</span></div>
-  <div class="pill"><img class="ui" src="sprites/icon-hourglass.webp" alt="Hourglasses"> <span id="hg">0</span></div>
+  <div class="pill" id="coinPill"><img class="ui" src="sprites/icon-coin.webp" alt="Coins"> <span id="coins">0</span></div>
+  <div class="pill" id="hgPill"><img class="ui" src="sprites/icon-hourglass.webp" alt="Hourglasses"> <span id="hg">0</span></div>
   <div class="pill" id="storePill"><img class="ui" src="sprites/icon-crate.webp" alt="Barn space"> <span id="store">0/50</span></div>
   <div class="pill" id="seasonPill"></div>
 </div>
@@ -59,6 +59,7 @@
 
 <div id="modal" hidden><div class="modal-card" id="modalCard"></div></div>
 <div id="toast"></div>
+<div id="hudTip" hidden></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

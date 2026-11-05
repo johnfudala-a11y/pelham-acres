@@ -3,11 +3,11 @@ import { BUILD, CROPS, ITEMS, PRODUCTS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE
 import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, audioRunning } from './audio.js';
 import * as Q from './quests.js';
-import { PEOPLE, QUEST_BY_ID } from './story.js';
+import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.21';
+export const APP_VERSION = '0.22';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen } from './render.js';
 
@@ -97,6 +97,20 @@ function modal(html) { $('#modalCard').innerHTML = paint(html); $('#modal').hidd
 function closeModal() { $('#modal').hidden = true; }
 $('#modal').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) { act(a); } else if (e.target.id === 'modal') closeModal(); });
 
+// a friendship heart went up: a thank-you gift, and a lasting perk at 3 and 5 hearts
+const heartRow = (pid, size = '') => { const h = G.hearts(pid); return `<span class="hearts ${size}">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= h ? 'on' : ''}">♥</i>`).join('')}</span>`; };
+G.hooks.onHeart = (pid, h, gift) => setTimeout(() => {
+  const p = PEOPLE[pid]; if (!p) return;
+  sfx.levelUp();
+  const pk = h === 3 ? G.PERKS[pid].text[0] : h === 5 ? G.PERKS[pid].text[1] : null;
+  const lines = { 1: "You're a good neighbor, you know that?", 2: "I've been telling everyone about you.", 3: "You've become a real friend to me.", 4: "I don't know what this town did without you.", 5: "You're family now. Don't argue." };
+  const show = () => modal(`${talkHead(pid)}${heartRow(pid, 'big')}<h2 style="margin-top:6px">${h} ${h === 1 ? 'heart' : 'hearts'} with ${p.name}!</h2>
+    <div class="say">${lines[h]}</div>
+    <div class="rewardrow"><span class="sub" style="margin:0">Thank-you gift</span>${rewardLine(gift)}</div>
+    ${pk ? `<div class="perkbox">${ui('ribbon', '')}<div><b>New perk:</b> ${pk}</div></div>` : `<p class="sub">Next perk at ${h < 3 ? 3 : 5} hearts: ${G.PERKS[pid].text[h < 3 ? 0 : 1]}</p>`}
+    <button class="btn wide" data-act="closeModal">Aw, thank you!</button>`);
+  if ($('#modal').hidden) show(); else levelQueue.push(() => show());
+}, 700);
 const levelQueue = [];
 G.hooks.onLevel = L => { levelQueue.push(L); };
 G.hooks.onMastery = (kind, id, s) => {
@@ -120,6 +134,7 @@ function upgradeBlock(o) {
 function showLevelUps() {
   if (!levelQueue.length || !$('#modal').hidden) return;
   const L = levelQueue.shift();
+  if (typeof L === 'function') { L(); return; }   // a queued pop-up (e.g. a friendship heart)
   const un = unlocksAt(L);
   sfx.levelUp(); confetti();
   modal(`<div class="bigart">${IMG('sprites/icon-medal.webp', '🎉', 'bigimg')}<div class="medalnum">${L}</div></div><h2>Level ${L}!</h2><p class="sub">+${L * 15} 🪙 &nbsp; +2 ⏳</p>
@@ -164,7 +179,9 @@ function moveBtn(o) {
   if (r > now()) return `<button class="btn alt sm off" data-act="move">↔ Move again in <span data-end="${r}">${fmtT(r - now())}</span></button>`;
   return `<button class="btn alt sm" data-act="move">↔ Move</button>${G.moveLimited(o) ? ' <span class="sub" style="margin:0">once an hour</span>' : ''}`;
 }
-const req = (id, n) => `<span class="req ${G.have(id) >= n ? 'ok' : 'no'}">${icH(id)} ${G.have(id)}/${n}</span>`;
+// a "have/need" chip; when you're short, tapping it shows where to get more
+const req = (id, n) => G.have(id) >= n ? `<span class="req ok">${icH(id)} ${G.have(id)}/${n}</span>`
+  : `<span class="req no tappable" data-act="where" data-id="${id}" title="Where do I get this?">${icH(id)} ${G.have(id)}/${n}<i class="q">?</i></span>`;
 const reqs = r => Object.entries(r).map(([k, v]) => req(k, v)).join(' ');
 
 // ---------- HUD ----------
@@ -183,6 +200,62 @@ function refreshHud() {
   const se = G.season();
   $('#seasonPill').innerHTML = `${ui(se.name.toLowerCase(), se.icon)} ${se.name} <small>${fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '')}</small>`;
 }
+
+// ---------- top bar: tap an icon for a little description box ----------
+function hudTipHtml(k) {
+  const S = G.S, se = G.season();
+  switch (k) {
+    case 'lvlPill': {
+      const need = xpFor(S.level), un = unlocksAt(S.level + 1);
+      return `<h4>Level ${S.level}</h4><div class="cbar"><div style="width:${S.xp / need * 100}%"></div></div>
+        <p><b>${fmtN(S.xp)} / ${fmtN(need)} XP</b> · ${fmtN(need - S.xp)} more to level ${S.level + 1}.</p>
+        <p class="sub">Earn XP by harvesting, making goods, collecting from animals, delivering orders and finishing stories.</p>
+        ${un.length ? `<b>Level ${S.level + 1} unlocks</b><div class="tipchips">${un.slice(0, 6).map(u => `<span class="chip">${u.id && (BUILD[u.id] || ITEMS[u.id]) ? art(u.id) : u.icon} ${u.name}</span>`).join('')}</div>` : ''}`;
+    }
+    case 'coinPill': return `<h4>${ui('coin', '')} ${fmtN(S.coins)} coins</h4>
+        <p>Spend coins on buildings, crops, animals and upgrades.</p>
+        <p class="sub">Earn them by delivering orders, collecting rent, loading the freight train and selling extras from the Barn. Town charm adds <b>+${G.charm()}%</b> to every order.</p>`;
+    case 'hgPill': return `<h4>${ui('hourglass', '')} ${S.hg} hourglass${S.hg === 1 ? '' : 'es'}</h4>
+        <p>Use an hourglass to finish something instantly: tap a growing field or a busy building and choose <b>Finish now</b>.</p>
+        <p class="sub">You earn them by leveling up, every 5th delivery, mastery stars, stories, friendships and the Seasonal Fair. Never sold, never needed.</p>`;
+    case 'storePill': {
+      const used = G.storageUsed(), cap = G.storageCap();
+      return `<h4>${ui('crate', '')} Barn space</h4><div class="cbar"><div style="width:${Math.min(100, used / cap * 100)}%"></div></div>
+        <p><b>${used} of ${cap}</b> spaces used${used >= cap ? ' · <b>full!</b>' : ''}.</p>
+        <p class="sub">Crops and goods take space; wood, stone, tools and building supplies don't. Sell extras or upgrade the barn for +30 space.</p>
+        <button class="btn sm" data-tip="barn">Open the Barn</button>`;
+    }
+    case 'seasonPill': {
+      const left = fmtT(G.seasonEndsAt() - now()).replace(/ \d+s$/, '');
+      return `<h4>${ui(se.name.toLowerCase(), se.icon)} ${se.name}</h4>
+        <p>Each season lasts one day. <b>${left}</b> until the next one.</p>
+        <b>In season now</b><div class="tipchips">${se.crops.filter(c => CROPS[c]).map(c => `<span class="chip">${art(c)} ${CROPS[c].name}</span>`).join('')}</div>
+        <p class="sub">In-season crops grow 25% faster, pay more in orders, and count toward the ${E.fairName()}.</p>
+        ${S.level >= 6 ? '<button class="btn sm" data-tip="fair">See the Fair</button>' : ''}`;
+    }
+  }
+  return '';
+}
+let tipFor = null;
+function showHudTip(el) {
+  const tip = $('#hudTip');
+  if (tipFor === el.id && !tip.hidden) { tip.hidden = true; tipFor = null; return; }
+  sfx.tap(); tipFor = el.id;
+  tip.innerHTML = paint(hudTipHtml(el.id));
+  const r = el.getBoundingClientRect();
+  tip.hidden = false;
+  const w = tip.offsetWidth, x = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  tip.style.left = x + 'px'; tip.style.top = (r.bottom + 10) + 'px';
+  tip.style.setProperty('--ax', (r.left + r.width / 2 - x) + 'px');   // where the little pointer sits
+}
+for (const id of ['lvlPill', 'coinPill', 'hgPill', 'storePill', 'seasonPill']) $('#' + id).addEventListener('click', e => { e.stopPropagation(); showHudTip(e.currentTarget); });
+$('#hudTip').addEventListener('click', e => {
+  const b = e.target.closest('[data-tip]'); if (!b) return;
+  $('#hudTip').hidden = true; tipFor = null;
+  if (b.dataset.tip === 'barn') { openSheet('Barn', barnSheet); $('#sheetTitle').dataset.k = 'barn'; }
+  else { questTab = 'fair'; openSheet('Quests', questsSheet); $('#sheetTitle').dataset.k = 'quests'; }
+});
+addEventListener('pointerdown', e => { if (!e.target.closest('#hudTip, #hud')) { $('#hudTip').hidden = true; tipFor = null; } }, true);
 
 // ---------- mode bar (planting / placing) ----------
 function setModeBar(html) { const m = $('#modebar'); if (!html) { m.hidden = true; m.innerHTML = ''; return; } m.innerHTML = html; m.hidden = false; }
@@ -258,6 +331,15 @@ function act(el) {
   switch (d.act) {
     case 'closeModal': closeModal(); setTimeout(showLevelUps, 200); break;
     case 'collectAll': collectAll(); return;
+    case 'where': goTo(guideForItem(d.id, 'Make'), nm(d.id)); return;
+    case 'showme': { const q = QUEST_BY_ID[d.q]; goTo(q && guideFor(q, q.goals[+d.g]), q && q.goals[+d.g].label); return; }
+    case 'claimChapter': {
+      const c = Q.claimChapter(d.id); if (!c) break;
+      sfx.levelUp(); confetti();
+      modal(`<div class="chapterhead">Chapter ${c.n} complete</div><h2>${c.title}</h2>${talkHead(c.who)}<div class="say">${c.end}</div>
+        <div class="rewardrow"><span class="sub" style="margin:0">Chapter reward</span>${rewardLine(c.reward)}</div><button class="btn wide" data-act="closeModal">On to the next chapter!</button>`);
+      G.save(); refreshHud(); return;
+    }
     case 'cloudSend': case 'cloudVerify': case 'cloudBack': case 'cloudSave': case 'cloudLoad': case 'cloudOut': cloudAct(d.act); return;
     case 'cloudUseCloud': if (pendingCloud) { G.setState(pendingCloud); pendingCloud = null; afterLoad(); closeModal(); closeSheet(); toast('Cloud farm loaded ☁️'); } return;
     case 'cloudKeepLocal': pendingCloud = null; closeModal(); C.upload(true).then(() => toast('This farm is now the cloud copy ☁️')).catch(e => toast('Cloud: ' + e.message)); return;
@@ -329,7 +411,7 @@ function act(el) {
       if (r) {
         sfx.deliver();
         const fair = E.fairCount(items);
-        toast(`Delivered! +${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}${fair ? ` · +${fair} toward the ${E.fairName()}` : ''}`);
+        toast(`${r.rushed ? 'Rush delivery! ' : 'Delivered! '}+${fmtN(r.coins)} 🪙 +${r.xp} XP${r.bonus ? ' · bonus ⏳' : ''}${fair ? ` · +${fair} toward the ${E.fairName()}` : ''}`);
         foundKeepsake(E.rollKeepsake('deliver'));
       }
       break;
@@ -623,17 +705,22 @@ function shopSheet() {
 function ordersSheet() {
   G.refreshOrders();
   const t = now();
+  const isRush = o => o.rush && o.rush > t;
   const list = G.S.orders.map((o, i) => ({ o, i, ok: !o.wait && G.hasAll(o.items) }))
-    .sort((a, b) => (b.ok - a.ok) || (!!a.o.wait - !!b.o.wait));
+    .sort((a, b) => (b.ok - a.ok) || (isRush(b.o) - isRush(a.o)) || (!!a.o.wait - !!b.o.wait));
   const ready = list.filter(x => x.ok).length;
-  return `<p class="sub">${ready ? `<b>${ready} order${ready > 1 ? 's' : ''} ready to deliver!</b> ` : ''}Town charm adds +${G.charm()}% to every reward.</p><div class="orders">` + list.map(({ o, i, ok }) => {
+  return `<p class="sub">${ready ? `<b>${ready} order${ready > 1 ? 's' : ''} ready to deliver!</b> ` : ''}Filling a neighbor's order builds your friendship. Tap a red item to see where to get it.</p><div class="orders">` + list.map(({ o, i, ok }) => {
     if (o.wait) return `<div class="order waiting">${ui('mail', '✉️')}<span class="sub" style="margin:0">A new order arrives in <b data-end="${o.wait}">${fmtT(o.wait - t)}</b></span></div>`;
-    const pid = WHO_PID[o.who];
-    return `<div class="order ${ok ? 'ready' : ''}"><div class="ohead">${pid ? face(pid, 'oface') : ui('mail', '✉️').replace('class="ui"', 'class="oface plain"')}
-        <div class="grow"><div class="who">${o.who}</div><div class="rew">🪙 ${fmtN(o.coins)} &nbsp; ⭐ ${o.xp}</div></div>
+    const pid = G.orderPid(o), rush = isRush(o);
+    const coins = rush ? Math.round(o.coins * 1.5) : o.coins;
+    return `<div class="order ${ok ? 'ready' : ''} ${rush ? 'rush' : ''}"><div class="ohead">${pid ? face(pid, 'oface') : ui('mail', '✉️').replace('class="ui"', 'class="oface plain"')}
+        <div class="grow"><div class="who">${o.who} ${pid ? heartRow(pid) : ''}</div>
+        ${o.why ? `<div class="why">${o.why}</div>` : ''}</div>
         ${ok ? '<span class="stamp">Ready</span>' : ''}</div>
+      ${rush ? `<div class="rushbar">${ui('hourglass', '')} <b>Rush order:</b> +50% coins${pid ? ' and extra friendship' : ''} if delivered in <b data-end="${o.rush}">${fmtT(o.rush - t)}</b></div>` : ''}
       <div class="row reqs">${reqs(o.items)}</div>
-      <div class="row"><button class="btn ${ok ? '' : 'off'}" data-act="deliver" data-i="${i}">Deliver</button><span class="spacer"></span><button class="btn alt sm" data-act="skip" data-i="${i}">Skip</button></div></div>`;
+      <div class="row"><span class="rew">🪙 ${fmtN(coins)} &nbsp; ⭐ ${o.xp}${pid ? ` &nbsp; <span class="heartplus">+${rush ? 2 : 1} ♥</span>` : ''}</span><span class="spacer"></span>
+        <button class="btn alt sm" data-act="skip" data-i="${i}">Skip</button><button class="btn ${ok ? '' : 'off'}" data-act="deliver" data-i="${i}">Deliver</button></div></div>`;
   }).join('') + '</div>';
 }
 function menuSheet() {
@@ -837,10 +924,11 @@ function goalIcon(g) {
   return ui('scroll', '•').replace('class="ui"', 'class="gi"');
 }
 function goalsHtml(q) {
-  return q.goals.map(g => {
+  return q.goals.map((g, i) => {
     const p = Q.goalProgress(q, g), done = p >= g.n;
     return `<div class="goal ${done ? 'done' : ''}">${goalIcon(g)}<span class="gl">${g.label}</span>
-      <div class="bar"><div style="width:${p / g.n * 100}%"></div></div><b class="gn">${done ? '✔' : `${p}/${g.n}`}</b></div>`;
+      <div class="bar"><div style="width:${p / g.n * 100}%"></div></div><b class="gn">${done ? '✔' : `${p}/${g.n}`}</b>
+      ${done ? '<span></span>' : `<button class="showme" data-act="showme" data-q="${q.id}" data-g="${i}" title="Show me where">Show me</button>`}</div>`;
   }).join('');
 }
 // first sentence or so of what they said, as a teaser on the card
@@ -860,10 +948,36 @@ function questsSheet() {
   Q.refreshQuests();
   const projReady = E.PROJECTS.filter(p => E.projectOpen(p) && !E.projectDone(p) && E.canFundStage(p)).length;
   const setsReady = E.KEEPSAKE_SETS.filter(s => E.setComplete(s) && !E.setClaimed(s)).length;
-  const TABS = [['requests', 'Requests', 'icon-scroll', Q.claimable().length], ['projects', 'Projects', 'icon-hammer', projReady],
+  const chReady = CHAPTERS.filter(Q.chapterReady).length;
+  const TABS = [['requests', 'Story', 'icon-scroll', Q.claimable().length + chReady], ['neighbors', 'Neighbors', 'icon-heart', 0], ['projects', 'Projects', 'icon-hammer', projReady],
     ['fair', 'Fair', 'icon-ribbon', E.fairClaimable() ? 1 : 0], ['album', 'Scrapbook', 'icon-quill', setsReady]];
   const tabs = `<div class="tabs">${TABS.map(([k, label, im, n]) => `<button class="tab ${questTab === k ? 'on' : ''}" data-act="qtab" data-tab="${k}">${IMG(`sprites/${im}.webp`, '', 'ti')}<span>${label}</span>${n ? `<i class="tcount">${n}</i>` : ''}</button>`).join('')}</div>`;
-  return tabs + (questTab === 'projects' ? projectsHtml() : questTab === 'fair' ? fairHtml() : questTab === 'album' ? albumHtml() : requestsHtml());
+  return tabs + (questTab === 'projects' ? projectsHtml() : questTab === 'fair' ? fairHtml() : questTab === 'album' ? albumHtml() : questTab === 'neighbors' ? neighborsHtml() : requestsHtml());
+}
+// where you are in the story: chapter title, progress, and the chapter reward when it's done
+function chapterHtml() {
+  const ready = CHAPTERS.find(Q.chapterReady);
+  const c = ready || Q.currentChapter(), done = Q.chapterDone(c), all = c.quests.length;
+  if (Q.chapterClaimed(c) && !ready) return `<div class="chapter done"><div class="chapterhead">The story so far</div><b>All chapters complete!</b> More of Pelham Acres' story is on the way.</div>`;
+  return `<div class="chapter ${ready ? 'ready' : ''}"><div class="row"><div class="grow"><div class="chapterhead">Chapter ${c.n}</div><div class="ctitle">${c.title}</div></div>
+      ${face(c.who, 'oface')}</div>
+    <div class="cbar"><div style="width:${done / all * 100}%"></div></div>
+    <div class="row"><span class="sub" style="margin:0">${done} of ${all} stories finished · reward</span>${rewardLine(c.reward)}
+    ${ready ? `<span class="spacer"></span><button class="btn gold" data-act="claimChapter" data-id="${c.id}">Finish chapter</button>` : ''}</div></div>`;
+}
+// everyone you've met, how close you are, and what each friendship unlocks
+function neighborsHtml() {
+  const met = Object.keys(PEOPLE).filter(Q.introduced);
+  if (!met.length) return '<p class="sub">You haven\'t met anyone yet. Keep farming!</p>';
+  return `<p class="sub">Help your neighbors (their orders, daily favors and stories) to grow your friendship. Every heart brings a thank-you gift; 3 and 5 hearts unlock a lasting perk.</p>` +
+    met.map(pid => {
+      const p = PEOPLE[pid], h = G.hearts(pid), pts = G.friendPoints(pid), next = G.HEART_AT[h], prev = h ? G.HEART_AT[h - 1] : 0;
+      const pk = G.PERKS[pid];
+      return `<div class="quest neighbor"><div class="qh">${face(pid)}<div class="grow"><div class="qt">${p.name}</div>${heartRow(pid, 'mid')}
+        <div class="qwho">${p.blurb}</div></div></div>
+        ${h < 5 ? `<div class="cbar thin"><div style="width:${(pts - prev) / (next - prev) * 100}%"></div></div><div class="sub" style="margin:4px 0 0">${next - pts} more to the next heart</div>` : '<div class="sub" style="margin:6px 0 0"><b>Best friends!</b></div>'}
+        <div class="perks"><span class="${h >= 3 ? 'on' : ''}">3♥ ${pk.text[0]}</span><span class="${h >= 5 ? 'on' : ''}">5♥ ${pk.text[1]}</span></div></div>`;
+    }).join('');
 }
 function projectsHtml() {
   return `<p class="sub">Big jobs the whole town pitches in on. Each takes three stages of coins and goods, and a finished project adds charm forever (better order rewards).</p>` +
@@ -906,8 +1020,8 @@ function albumHtml() {
 }
 function requestsHtml() {
   const list = Q.activeQuests().slice().sort((a, b) => Q.isComplete(b) - Q.isComplete(a));
-  if (!list.length) return dailyHtml() + '<p class="sub">No requests right now. Keep farming! New ones arrive as you level up.</p>';
-  return dailyHtml() + list.map(q => {
+  if (!list.length) return chapterHtml() + dailyHtml() + '<p class="sub">No requests right now. Keep farming! New ones arrive as you level up.</p>';
+  return chapterHtml() + dailyHtml() + list.map(q => {
     const p = PEOPLE[q.who], ready = Q.isComplete(q), fresh = !G.S.quests.active[q.id]?.seen;
     return `<div class="quest ${ready ? 'ready' : ''}">${fresh ? '<span class="ribbon">New</span>' : ''}
       <div class="qh">${face(q.who)}<div class="grow"><div class="qt">${q.title}</div><div class="qwho">${p.name}</div></div></div>
@@ -959,7 +1073,7 @@ function questTick() {
     const mine = Q.questsFor(p.id);
     p.badge = mine.some(Q.isComplete) ? '✓' : mine.some(q => !G.S.quests.active[q.id].seen) ? '!' : null;
   }
-  const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length + E.extrasNotice();
+  const b = $('#questBadge'), n = Q.claimable().length + Q.unseen().length + E.extrasNotice() + CHAPTERS.filter(Q.chapterReady).length;
   b.hidden = !n; b.textContent = n;
   if ($('#modal').hidden && !levelQueue.length) { const u = Q.unseen()[0]; if (u) questIntro(u); }
   applyGuide();
@@ -1013,7 +1127,19 @@ function guideFor(q, g) {
   }
   return { text: g.label };
 }
+// "Show me" / "where do I get this?": close the panel, point the hint arrow at the right place and look there
+function goTo(g, label) {
+  if (!g) { toast(`${label || 'That'} is already done!`); return; }
+  closeSheet(); closeModal();
+  view.pinGuide = { ...g, until: now() + 90000 };
+  const tgt = g.obj ? { x: g.obj.x + BUILD[g.obj.t].w / 2, y: g.obj.y + BUILD[g.obj.t].h / 2 } : g.walker ? { x: g.walker.x, y: g.walker.y } : null;
+  if (tgt) centerOn(tgt.x, tgt.y);
+  sfx.tap(); applyGuide();
+  toast(g.text);
+}
 function computeGuide() {
+  if (view.pinGuide && view.pinGuide.until > now()) return view.pinGuide;
+  view.pinGuide = null;
   if (G.S.settings.hints === false) return null;
   const ready = Q.claimable()[0];
   if (ready) { const p = people.find(x => x.id === ready.who); return { text: `${PEOPLE[ready.who].name} has a reward for you. Tap them!`, walker: p }; }

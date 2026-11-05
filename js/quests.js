@@ -1,5 +1,18 @@
 // Pelham Acres — quest tracking.
-import { QUESTS, QUEST_BY_ID, MAX_ACTIVE } from './story.js';
+import { QUESTS, QUEST_BY_ID, MAX_ACTIVE, CHAPTERS } from './story.js';
+
+// ---------- story chapters ----------
+export const chapterDone = c => c.quests.filter(id => Q().done.includes(id)).length;
+export const chapterClaimed = c => (G.S.chaptersClaimed || []).includes(c.id);
+// the chapter you're in: the first one not yet finished-and-claimed
+export const currentChapter = () => CHAPTERS.find(c => !chapterClaimed(c)) || CHAPTERS[CHAPTERS.length - 1];
+export const chapterReady = c => chapterDone(c) >= c.quests.length && !chapterClaimed(c);
+export function claimChapter(id) {
+  const c = CHAPTERS.find(x => x.id === id); if (!c || !chapterReady(c)) return null;
+  (G.S.chaptersClaimed = G.S.chaptersClaimed || []).push(c.id);
+  G.S.coins += c.reward.coins; G.S.hg += c.reward.hg; G.addXP(c.reward.xp);
+  return c;
+}
 import * as G from './game.js';
 
 function Q() { const S = G.S; S.quests = S.quests || { active: {}, done: [] }; S.flags = S.flags || {}; return S.quests; }
@@ -36,6 +49,7 @@ export const activeQuests = () => Object.keys(Q().active).map(id => QUEST_BY_ID[
 export const claimable = () => activeQuests().filter(isComplete);
 export const questsFor = who => activeQuests().filter(q => q.who === who);
 export const hasFlag = f => !!(G.S.flags && G.S.flags[f]);
+G.setMetCheck(pid => QUESTS.some(q => q.who === pid && G.S.quests && (G.S.quests.active[q.id] || G.S.quests.done.includes(q.id))));
 export const introduced = who => QUESTS.some(q => q.who === who && (Q().active[q.id] || Q().done.includes(q.id)));
 export function markSeen(id) { const a = Q().active[id]; if (a) a.seen = true; }
 export const unseen = () => activeQuests().filter(q => !Q().active[q.id].seen);
@@ -59,7 +73,7 @@ export function claimDaily() {
   if (!d || d.done || !G.hasAll(d.items)) return null;
   G.takeAll(d.items);
   G.S.coins += d.coins; G.S.hg += d.hg; d.done = true;
-  G.addXP(d.xp); G.stat('favor');
+  G.addXP(d.xp); G.stat('favor'); G.addFriend(d.who, 2);
   return d;
 }
 
@@ -78,5 +92,6 @@ export function claim(id) {
   st.done.push(id);
   if (r.xp) G.addXP(r.xp);
   G.stat('quest');
+  G.addFriend(q.who, 2);
   return q;
 }

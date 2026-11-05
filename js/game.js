@@ -15,8 +15,41 @@ export function seasonEndsAt() { const t = now(), lt = localT(t); return t + (SE
 export const inSeason = c => season().crops.includes(c);
 // Overall pace: every crop, recipe and animal takes this many times its base time (1.25 = 20% slower).
 export const TIME_SCALE = globalThis.PA_TIME_SCALE ?? 1.25; // (overridable only by the balance simulator)
-export const cropTime = c => CROPS[c].time * TIME_SCALE * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1);
-export const animalTime = (o, a) => a.time * TIME_SCALE * speedOf(o);
+export const cropTime = c => CROPS[c].time * TIME_SCALE * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1) * perk('joe');
+export const animalTime = (o, a) => a.time * TIME_SCALE * speedOf(o) * perk('ellis');
+
+// ---------- Neighbor friendships: hearts earned by helping each townsperson ----------
+// points come from their orders (+1, rush +2), daily favors (+2) and their quests (+2)
+export const HEART_AT = [3, 8, 15, 25, 40];           // points needed for hearts 1..5
+export const hearts = pid => HEART_AT.filter(n => ((S.friends && S.friends[pid]) || 0) >= n).length;
+export const friendPoints = pid => (S.friends && S.friends[pid]) || 0;
+// what each friend's 3♥ and 5♥ perks do (a multiplier; time perks < 1, money perks > 1)
+export const PERKS = {
+  joe:    { text: ['Crops grow 5% faster', 'Crops grow 10% faster'], kind: 'time' },
+  ellis:  { text: ['Animals produce 5% faster', 'Animals produce 10% faster'], kind: 'time' },
+  dottie: { text: ['Bakery & Dairy work 8% faster', 'Bakery & Dairy work 15% faster'], kind: 'time' },
+  tom:    { text: ['Workshop works 10% faster', 'Workshop works 20% faster'], kind: 'time' },
+  rosa:   { text: ['Rent +10%', 'Rent +20%'], kind: 'money' },
+  finch:  { text: ['Order coins +5%', 'Order coins +10%'], kind: 'money' },
+  hattie: { text: ['+5 town charm', '+10 town charm'], kind: 'charm' },
+};
+const PERK_VAL = { joe: [0.95, 0.9], ellis: [0.95, 0.9], dottie: [0.92, 0.85], tom: [0.9, 0.8], rosa: [1.1, 1.2], finch: [1.05, 1.1], hattie: [5, 10] };
+export function perk(pid) {
+  if (!S) return pid === 'hattie' ? 0 : 1;
+  const h = hearts(pid), v = PERK_VAL[pid];
+  return h >= 5 ? v[1] : h >= 3 ? v[0] : (pid === 'hattie' ? 0 : 1);
+}
+// add friendship; returns the new heart count if it went up (and pays a thank-you gift)
+export function addFriend(pid, n) {
+  if (!pid) return 0;
+  S.friends = S.friends || {};
+  const before = hearts(pid);
+  S.friends[pid] = friendPoints(pid) + n;
+  const after = hearts(pid);
+  if (after > before) { const gift = friendGift(after); S.coins += gift.coins; S.hg += gift.hg; hooks.onHeart && hooks.onHeart(pid, after, gift); }
+  return after > before ? after : 0;
+}
+export const friendGift = h => ({ coins: 60 * h + 15 * S.level, hg: h >= 3 ? 2 : 1 });
 
 // ---------- Stats (used by quests) ----------
 export function stat(k, n = 1) { S.stats = S.stats || {}; S.stats[k] = (S.stats[k] || 0) + n; hooks.onStat && hooks.onStat(k); }
@@ -46,7 +79,7 @@ export function upgradeBuilding(o) {
   addXP(5 * o.lvl);
   return 'ok';
 }
-export const rentOf = o => Math.round(BUILD[o.t].rent * (1 + 0.25 * (blvl(o) - 1)));
+export const rentOf = o => Math.round(BUILD[o.t].rent * (1 + 0.25 * (blvl(o) - 1)) * perk('rosa'));
 export const penCap = o => BUILD[o.t].cap + blvl(o) - 1;
 const KEY = 'pelhamAcres.save.v1';
 
@@ -192,7 +225,8 @@ export function fertilize(o) {
 
 // ---------- Producers ----------
 export const slots = o => 3 + blvl(o) - 1 + (o.extraSlots || 0);
-export const recipeTime = (o, r) => r.time * TIME_SCALE * speedOf(o) * masteryTime('recipe', r.out);
+export const recipeTime = (o, r) => r.time * TIME_SCALE * speedOf(o) * masteryTime('recipe', r.out)
+  * (o.t === 'bakery' || o.t === 'dairy' ? perk('dottie') : o.t === 'workshop' ? perk('tom') : 1);
 export function queueJob(o, ri) {
   const r = RECIPES[o.t][ri];
   if (S.level < r.lvl) return 'locked';
@@ -314,7 +348,7 @@ export function charm() {
     if (b.kind === 'civic') civic += b.charm;
     else if (b.kind === 'decor') decor += b.charm || 0;
   }
-  return civic + Math.min(DECOR_CHARM_CAP, decor) + (S.projectCharm || 0); // + finished Town Projects
+  return civic + Math.min(DECOR_CHARM_CAP, decor) + (S.projectCharm || 0) + perk('hattie'); // + Town Projects + Hattie's friendship
 }
 
 // ---------- Orders ----------
@@ -348,14 +382,36 @@ export function genOrder() {
     const q = isCrop ? 2 + Math.floor(Math.random() * 5) : 1 + Math.floor(Math.random() * (VALUE[id] < 40 ? 3 : 2));
     items[id] = q; val += itemValue(id) * q;
   }
-  const names = ['Mrs. Abernathy', 'Farmer Joe', 'The Pelham Diner', 'Old Tom', 'Rosa at the Inn', 'The Mayor', 'Grandma Ellis', 'Pastor Lyle', 'The Hendersons', 'Coach Brady', 'Dottie', 'Mr. Finch'];
-  return {
-    who: names[Math.floor(Math.random() * names.length)],
-    items,
-    coins: Math.round(val * 1.5 * (1 + charm() / 100)),
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  // townsfolk you've met order most often; other folks around the county fill in
+  const met = Object.keys(ORDER_FOLK).filter(pid => metPid(pid));
+  const fromFriend = met.length && Math.random() < 0.6;
+  const pid = fromFriend ? pick(met) : null;
+  const who = pid ? ORDER_FOLK[pid].name : pick(['Mrs. Abernathy', 'The Pelham Diner', 'Pastor Lyle', 'The Hendersons', 'Coach Brady', 'The Library Club', 'Doc Whitley', 'The Miller Twins']);
+  const why = pick(pid ? ORDER_FOLK[pid].why.concat(WHY) : WHY);
+  // now and then an order is a rush job: optional, pays 50% more if done in time (no penalty if not)
+  const rush = S.level >= 4 && Math.random() < 0.2 ? now() + (20 + Math.floor(Math.random() * 25)) * 60000 : 0;
+  return { who, pid, why, items, rush,
+    coins: Math.round(val * 1.5 * (1 + charm() / 100) * perk('finch')),
     xp: Math.max(2, Math.round(val / 3)),
   };
 }
+// who orders from you and why (the "why" makes each order a small story)
+const ORDER_FOLK = {
+  joe:    { name: 'Farmer Joe',      why: ['needs supplies for harvest week', 'is feeding the hired hands', 'is taking a basket to the county fair'] },
+  dottie: { name: 'Dottie',          why: ['is testing a new recipe', 'has a wedding cake order', 'is baking for the church bake sale'] },
+  tom:    { name: 'Old Tom',         why: ['is feeding the crew fixing the old bridge', 'is restocking his workshop pantry', 'promised his grandkids a treat'] },
+  rosa:   { name: 'Rosa at the Inn', why: ['has a full inn this weekend', 'is hosting the book club', 'is packing picnic lunches for guests'] },
+  hattie: { name: 'The Mayor',       why: ['is hosting the town council', 'is welcoming a visiting dignitary', 'wants refreshments for the parade'] },
+  finch:  { name: 'Mr. Finch',       why: ['is stocking the store shelves', 'has customers asking for it', 'is putting together gift baskets'] },
+  ellis:  { name: 'Grandma Ellis',   why: ['is making a care basket for a sick neighbor', 'is cooking Sunday supper for the family', 'is knitting circle snack day'] },
+};
+const WHY = ['wants something special for a birthday', 'is cooking for a family reunion', 'is setting up a stall at the Saturday market', 'is feeding the volunteer fire crew',
+  'has guests arriving tonight', 'is planning a surprise for a neighbor', 'is stocking up before the weekend', 'is throwing a garden party'];
+// have you met this townsperson yet? (they appear in the story)
+let metPid = () => true;
+export function setMetCheck(fn) { metPid = fn; }
+export const orderPid = o => o.pid || Object.keys(ORDER_FOLK).find(p => ORDER_FOLK[p].name === o.who) || null;
 export function refreshOrders() {
   const t = now();
   for (let i = 0; i < S.orders.length; i++) if (S.orders[i].wait && S.orders[i].wait <= t) S.orders[i] = genOrder();
@@ -365,9 +421,14 @@ export function deliver(i) {
   const o = S.orders[i];
   if (!o || o.wait || !hasAll(o.items)) return null;
   takeAll(o.items);
-  S.coins += o.coins;
+  const rushed = o.rush && o.rush > now();
+  const coins = rushed ? Math.round(o.coins * 1.5) : o.coins;
+  S.coins += coins;
   addXP(o.xp);
   S.orders[i] = { wait: now() + 15000 };
+  o.coins = coins; o.rushed = rushed;
+  const pid = orderPid(o);
+  if (pid) addFriend(pid, rushed ? 2 : 1);
   S.delivered = (S.delivered || 0) + 1;
   stat('deliver'); stat('orderCoins', o.coins);
   let bonus = false;

@@ -524,32 +524,67 @@ function drawCivicExtras(o, b, t) {
 }
 
 // ---------- status bubbles ----------
-function bubble(x, y, icon, ring) {
-  ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.arc(x + 1, y + 2, 12, 0, 7); ctx.fill();
-  ctx.fillStyle = '#FFFBF0'; ctx.beginPath(); ctx.arc(x, y, 12, 0, 7); ctx.fill();
-  if (ring != null) {
-    ctx.strokeStyle = '#E3D4B8'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 12, 0, 7); ctx.stroke();
-    ctx.strokeStyle = '#6BA43A'; ctx.beginPath(); ctx.arc(x, y, 12, -Math.PI / 2, -Math.PI / 2 + ring * Math.PI * 2); ctx.stroke();
+// painted picture for an item id (crop art or item icon), cached
+const _bimg = {};
+function itemImg(id) {
+  const src = id === 'coin' || id === 'crate' || id === 'ribbon' ? 'sprites/icon-' + id + '.webp' : CROPS[id] ? 'sprites/crop-' + id + '.webp' : 'sprites/icon-' + id + '.webp';
+  const im = _bimg[src] || (_bimg[src] = Object.assign(new Image(), { src }));
+  return im.complete && im.naturalWidth ? im : null;
+}
+// Status bubble over a building: a parchment thought-bubble with a wooden rim and a painted icon.
+//   mode 'ready' = something to collect (gold glow, bounce, count badge); 'busy' = in progress (smaller, progress ring);
+//   'need' = waiting on you (red "!" badge)
+function bubble(x, y, id, { mode = 'ready', ring = null, count = 0, t = 0, seed = 0 } = {}) {
+  const ready = mode === 'ready', r = ready ? 15 : 12.5;
+  if (ready) y -= Math.abs(Math.sin(t / 380 + seed)) * 4;          // happy bounce
+  ctx.save();
+  if (ready) {   // soft gold glow
+    const g = ctx.createRadialGradient(x, y, r * 0.6, x, y, r * 2.1);
+    g.addColorStop(0, 'rgba(255,214,90,.55)'); g.addColorStop(1, 'rgba(255,214,90,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2.1, 0, 7); ctx.fill();
   }
-  emoji(icon, x, y + 1, 13);
+  // shadow, tail, body
+  ctx.fillStyle = 'rgba(40,25,10,.22)'; ctx.beginPath(); ctx.arc(x + 1, y + 2.5, r, 0, 7); ctx.fill();
+  ctx.fillStyle = '#FFF6E2'; ctx.strokeStyle = ready ? '#C9861A' : '#8A5A2F'; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(x - 5, y + r - 3); ctx.lineTo(x, y + r + 7); ctx.lineTo(x + 5, y + r - 3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#FFF6E2'; ctx.fillRect(x - 4, y + r - 4, 8, 3);   // join the tail to the body
+  if (ring != null) {   // progress ring
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(120,90,40,.18)'; ctx.beginPath(); ctx.arc(x, y, r - 3, 0, 7); ctx.stroke();
+    ctx.strokeStyle = '#5E9A35'; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(x, y, r - 3, -Math.PI / 2, -Math.PI / 2 + ring * Math.PI * 2); ctx.stroke();
+  }
+  const im = itemImg(id), s = ready ? 22 : 17;
+  if (im) { if (!ready) ctx.globalAlpha = 0.85; ctx.drawImage(im, x - s / 2, y - s / 2, s, s); ctx.globalAlpha = 1; }
+  else emoji(ITEMS[id]?.icon || '•', x, y + 1, 13);
+  if (ready && ((t / 700 + seed) % 3) < 0.35) { ctx.fillStyle = '#FFFFFF'; star(x + r * 0.7, y - r * 0.7, 4); }   // twinkle
+  if (count > 1 || mode === 'need') {   // little badge: how many, or "!" when it needs you
+    const bx = x + r * 0.78, by = y - r * 0.72, txt = mode === 'need' ? '!' : '×' + count;
+    ctx.font = '800 10px "Fredoka", -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const bw = Math.max(15, ctx.measureText(txt).width + 8);
+    ctx.fillStyle = mode === 'need' ? '#C0472F' : '#5E9A35'; ctx.strokeStyle = '#FFF6E2'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx - bw / 2, by - 7.5, bw, 15, 7.5) : ctx.rect(bx - bw / 2, by - 7.5, bw, 15); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(txt, bx, by + 0.5);
+  }
+  ctx.restore();
 }
 function drawStatus(o, b, t) {
   const top = P(o.x + b.w / 2, o.y + b.h / 2);
-  const y = top[1] - heightOf(o) - 8 + Math.sin(t / 400 + o.id) * 2;
-  const x = top[0];
+  const y = top[1] - heightOf(o) - 12 + Math.sin(t / 900 + o.id) * 1.5;
+  const x = top[0], seed = o.id;
   if (b.kind === 'producer') {
     const done = jobsDone(o);
-    if (done) bubble(x, y, ITEMS[o.jobs[0].out].icon);
-    else if (o.jobs.length) { const j = o.jobs[0]; bubble(x, y, ITEMS[j.out].icon, Math.max(0, Math.min(1, (t - j.start) / (j.end - j.start)))); }
+    if (done) bubble(x, y, o.jobs[0].out, { count: done, t, seed });
+    else if (o.jobs.length) { const j = o.jobs[0]; bubble(x, y, j.out, { mode: 'busy', ring: Math.max(0, Math.min(1, (t - j.start) / (j.end - j.start))), t, seed }); }
   } else if (b.kind === 'pen') {
-    const a = penAnimal(o);
-    if (o.animals.some(an => animalState(an) === 'ready')) bubble(x, y, ITEMS[a.product].icon);
-    else if (o.animals.length && o.animals.every(an => animalState(an) === 'hungry')) bubble(x, y, ITEMS[a.feed].icon);
+    const a = penAnimal(o), ready = o.animals.filter(an => animalState(an) === 'ready').length;
+    if (ready) bubble(x, y, a.product, { count: ready, t, seed });
+    else if (o.animals.length && o.animals.every(an => animalState(an) === 'hungry')) bubble(x, y, a.feed, { mode: 'need', t, seed });
   } else if (b.kind === 'house') {
-    if (rentDue(o) > 0) bubble(x, y, '🪙');
+    const due = rentDue(o);
+    if (due > 0) bubble(x, y, 'coin', { count: due, t, seed });
   } else if (b.kind === 'station') {
     const st = trainState(o);
-    if (st.status === 'here') bubble(x, y, st.train.crates.every(c => c.filled) ? '✅' : '📦');
+    if (st.status === 'here') { const all = st.train.crates.every(c => c.filled); bubble(x, y, all ? 'ribbon' : 'crate', { mode: all ? 'ready' : 'need', t, seed }); }
   }
 }
 

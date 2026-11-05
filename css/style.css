@@ -233,6 +233,38 @@ h3.soon { color: var(--muted); }
 .pin { position: absolute; top: -6px; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #F07B62, #B03A22);
   box-shadow: 0 2px 2px rgba(0,0,0,.3); transform: translateX(-50%); }
 
+/* ---------- Story chapters, neighbors, order stories ---------- */
+.chapter { background: linear-gradient(180deg, #FFF6DA, #F6E4B8); border: 2px solid #D9B25E; border-radius: 16px; padding: 10px 12px; margin-bottom: 12px; box-shadow: 0 3px 0 #C29A45; }
+.chapter.ready { border-color: #E2B54A; box-shadow: 0 3px 0 #C9982E, 0 0 0 3px rgba(240,190,70,.35); }
+.chapterhead { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #A7741A; }
+.ctitle { font-family: var(--serif); font-weight: 800; font-size: 20px; color: var(--wood-d); }
+.cbar { height: 10px; border-radius: 6px; background: #E3CFA6; overflow: hidden; margin: 8px 0; box-shadow: inset 0 1px 2px rgba(0,0,0,.2); }
+.cbar > div { height: 100%; background: linear-gradient(180deg, #F2BC48, var(--gold)); border-radius: 6px; }
+.cbar.thin { height: 7px; margin: 8px 0 0; }
+.cbar.thin > div { background: linear-gradient(180deg, #F08C9A, #D9536A); }
+.hearts { display: inline-flex; gap: 1px; vertical-align: 1px; font-style: normal; }
+.hearts i { font-style: normal; color: #E3CFA6; font-size: 12px; line-height: 1; }
+.hearts i.on { color: #D9536A; text-shadow: 0 1px 0 rgba(120,20,40,.25); }
+.hearts.mid i { font-size: 16px; }
+.hearts.big { margin-top: 6px; } .hearts.big i { font-size: 26px; }
+.why { font-size: 13.5px; color: #5A4126; font-style: italic; line-height: 1.25; }
+.why::first-letter { text-transform: lowercase; }
+.order.rush { border-color: #E39A4A; background: #FFF3E2; }
+.rushbar { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 13px; background: #FFE2BF; border-radius: 10px; padding: 4px 8px; margin: -2px 0 8px; color: #7A3E0A; }
+.rushbar .ui { height: 18px; }
+.heartplus { color: #D9536A; }
+.req.tappable { cursor: pointer; position: relative; }
+.req .q { font-style: normal; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: #B8462F; color: #fff; font-size: 10px; margin-left: 3px; }
+.goal { grid-template-columns: 30px 1fr 60px 36px auto; }
+.showme { border: 1.5px solid var(--edge); background: #fff; color: var(--wood-d); border-radius: 9px; font-size: 11.5px; font-weight: 700; padding: 3px 7px; white-space: nowrap; }
+.showme:active { transform: translateY(1px); }
+.perks { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.perks span { font-size: 12px; font-weight: 600; background: rgba(120,80,30,.08); color: var(--muted); padding: 3px 8px; border-radius: 9px; }
+.perks span.on { background: #FBE0E5; color: #9A2A3E; }
+.perkbox { display: flex; align-items: center; gap: 10px; background: #FBE9C6; border: 2px solid #E2C27E; border-radius: 12px; padding: 8px 12px; text-align: left; margin: 6px 0 14px; }
+.perkbox .ui { height: 34px; }
+.quest.neighbor .face { width: 54px; height: 54px; }
+
 /* ---------- Town projects, Fair, Scrapbook ---------- */
 .face.plain { object-fit: contain; padding: 6px; background: #F1E2BF; }
 .pips { display: flex; align-items: center; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
@@ -342,6 +374,22 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
 #toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
 #toast .ui, #toast .ai { height: 20px; }
 
+/* top-bar description boxes */
+#hud .pill { pointer-events: auto; cursor: pointer; }
+#hud .pill:active { transform: scale(.96); }
+#hudTip { position: fixed; z-index: 28; width: min(320px, calc(100vw - 16px)); background: var(--parchbg); border: 2.5px solid var(--wood); border-radius: 14px;
+  padding: 10px 14px 12px; box-shadow: 0 3px 0 var(--wood-d), 0 10px 24px rgba(0,0,0,.28); animation: tipIn .18s ease-out; font-size: 14px; }
+#hudTip[hidden] { display: none; }
+#hudTip::before { content: ""; position: absolute; top: -10px; left: calc(var(--ax, 50%) - 9px); border: 9px solid transparent; border-top: 0; border-bottom-color: var(--wood); }
+#hudTip h4 { margin: 0 0 4px; font-family: var(--serif); font-size: 18px; color: var(--wood-d); display: flex; align-items: center; gap: 6px; }
+#hudTip h4 .ui { height: 24px; }
+#hudTip p { margin: 6px 0; line-height: 1.35; }
+#hudTip .sub { margin: 4px 0 8px; font-size: 13px; }
+#hudTip .tipchips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+#hudTip .chip { font-size: 12px; }
+#hudTip .chip .ai { height: 18px; }
+@keyframes tipIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
 /* things flying to the HUD, and the HUD bumping when they land */
 .fly { position: fixed; left: 0; top: 0; width: 32px; height: 32px; object-fit: contain; z-index: 40; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.3)); }
 .bump { animation: bump .35s ease-out; }
@@ -370,5 +418,5 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
   .xpbar { width: 60px; }
   #modebar { bottom: calc(env(safe-area-inset-bottom) + 84px); }
   .grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
-  .goal { grid-template-columns: 28px 1fr 50px 36px; }
+  .goal { grid-template-columns: 26px 1fr 40px 34px auto; }
 }
