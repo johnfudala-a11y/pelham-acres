@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.29';
+export const APP_VERSION = '0.30';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -685,7 +685,8 @@ function tapObject(o) {
       if (!o.crop) return openSheet('Plant a crop', () => cropPicker(), o);
       if (G.fieldReady(o)) return harvestField(o);
       return openSheet(`${CROPS[o.crop].name} growing`, () => fieldInfo(o), o);
-    case 'producer': collectProducer(o); return openSheet(b.name, () => producerSheet(o), o);
+    // first tap gathers whatever's finished (panel stays shut); a tap with nothing to collect opens the menu
+    case 'producer': if (collectProducer(o)) { G.save(); refreshHud(); return; } return openSheet(b.name, () => producerSheet(o), o);
     case 'pen': if (o.animals.length && tendPen(o)) return; return openSheet(b.name, () => penSheet(o), o);
     case 'house': if (collectHouse(o)) { G.save(); return; } return openSheet(b.name, () => houseSheet(o), o);
     case 'storage': return openSheet('Barn', () => barnSheet(), o);
