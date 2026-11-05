@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.19';
+export const APP_VERSION = '0.20';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands } from './render.js';
 
@@ -617,12 +617,14 @@ function cloudHtml() {
       <div class="row"><button class="btn sm" data-act="cloudSave">Save now</button><button class="btn alt sm" data-act="cloudLoad">Load cloud farm</button>
       <span class="spacer"></span><button class="btn alt sm" data-act="cloudOut">Sign out</button></div>`;
   }
-  if (cloudStep === 'code') return `<h3>Cloud save</h3><p class="sub">We emailed a 6-digit code to <b>${cloudEmailVal}</b>. Type it here:</p>
-    <div class="row"><input id="cloudCode" class="field" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456">
+  if (cloudStep === 'code') return `<h3>Cloud save</h3><p>We emailed a sign-in link to <b>${cloudEmailVal}</b>.</p>
+    <p class="sub"><b>Playing in Safari?</b> Just tap "Sign in" in the email.<br>
+    <b>Playing from your Home Screen icon?</b> In the email, press and hold "Sign in", choose <b>Copy Link</b>, then paste it here:</p>
+    <div class="row"><input id="cloudCode" class="field" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the link here">
     <button class="btn ${cloudBusy ? 'off' : ''}" data-act="cloudVerify">Sign in</button><button class="btn alt sm" data-act="cloudBack">Back</button></div>`;
-  return `<h3>Cloud save</h3><p class="sub">Sign in with your email to keep your farm safe and play it on any device. No password: we email you a code.</p>
+  return `<h3>Cloud save</h3><p class="sub">Sign in with your email to keep your farm safe and play it on any device. No password: we email you a sign-in link.</p>
     <div class="row"><input id="cloudEmail" class="field" type="email" autocomplete="email" placeholder="you@example.com" value="${cloudEmailVal}">
-    <button class="btn ${cloudBusy ? 'off' : ''}" data-act="cloudSend">Email me a code</button></div>`;
+    <button class="btn ${cloudBusy ? 'off' : ''}" data-act="cloudSend">Email me a link</button></div>`;
 }
 async function cloudAct(a) {
   if (cloudBusy) return;
@@ -631,11 +633,11 @@ async function cloudAct(a) {
     if (a === 'cloudSend') {
       const v = ($('#cloudEmail')?.value || '').trim();
       if (!/^\S+@\S+\.\S+$/.test(v)) { toast('Please type your email address'); return; }
-      cloudEmailVal = v; await C.sendCode(v); cloudStep = 'code'; toast('Code sent! Check your email.');
+      cloudEmailVal = v; await C.sendCode(v); cloudStep = 'code'; toast('Sign-in link sent! Check your email.');
     } else if (a === 'cloudVerify') {
       const code = ($('#cloudCode')?.value || '').trim();
-      if (code.length < 6) { toast('Type the code from the email'); return; }
-      await C.verifyCode(cloudEmailVal, code); cloudStep = 'email';
+      if (code.length < 6) { toast('Paste the sign-in link from the email'); return; }
+      await C.verifyInput(cloudEmailVal, code); cloudStep = 'email';
       toast('Signed in!'); await cloudCheck(true);
     } else if (a === 'cloudBack') cloudStep = 'email';
     else if (a === 'cloudSave') { await C.upload(true); toast('Farm saved to the cloud ☁️'); }
@@ -1145,7 +1147,11 @@ if (!loaded) {
   if (away > 120000) setTimeout(() => showAway(away), 700);
 }
 // signed-in players: check whether the cloud has a newer farm (e.g. played on another device)
-if (C.cloudEnabled() && C.signedIn()) setTimeout(() => cloudCheck(false).catch(() => {}), 1500);
+if (C.cloudEnabled() && location.hash.length > 1) {
+  // arrived from the email's sign-in link
+  C.consumeRedirect().then(u => { if (u) { toast(`Signed in as ${u.email} ☁️`); return cloudCheck(true); } })
+    .catch(e => toast(`Sign-in link: ${e.message}. Try sending a new one from Menu → Cloud save.`));
+} else if (C.cloudEnabled() && C.signedIn()) setTimeout(() => cloudCheck(false).catch(() => {}), 1500);
 // ---------- "While you were away" ----------
 // Everything that finished while the game was closed, with one button to gather the simple pickups.
 function readyReport() {

@@ -29,11 +29,34 @@ async function freshToken() {
   Object.assign(session, d); keep();
 }
 
-// Step 1: email a 6-digit code. Step 2: type it in.
-export const sendCode = email => api('/auth/v1/otp', { method: 'POST', body: { email, create_user: true } });
-export async function verifyCode(email, token) {
-  const d = await api('/auth/v1/verify', { method: 'POST', body: { type: 'email', email, token: String(token).trim() } });
+// Step 1: email a sign-in link (it leads back to the game).
+const gameUrl = () => location.origin + location.pathname;
+export const sendCode = email => api('/auth/v1/otp?redirect_to=' + encodeURIComponent(gameUrl()), { method: 'POST', body: { email, create_user: true } });
+// Step 2 (home-screen app): paste the link from the email, or type a 6-digit code if the email has one.
+export async function verifyInput(email, input) {
+  const s = String(input).trim();
+  let d;
+  if (/^\d{6,10}$/.test(s)) d = await api('/auth/v1/verify', { method: 'POST', body: { type: 'email', email, token: s } });
+  else {
+    let url; try { url = new URL(s); } catch (e) { throw new Error('Paste the whole sign-in link from the email'); }
+    const token = url.searchParams.get('token') || url.searchParams.get('token_hash');
+    if (!token) throw new Error("That doesn't look like the sign-in link");
+    const type = url.searchParams.get('type') || 'magiclink';
+    try { d = await api('/auth/v1/verify', { method: 'POST', body: { type, token_hash: token } }); }
+    catch (e) { d = await api('/auth/v1/verify', { method: 'POST', body: { type: 'email', token_hash: token } }); }
+  }
   session = { ...d, lastSync: 0 }; keep();
+  return session.user;
+}
+// Step 2 (tapping the link): the game opens with the session in the address (#access_token=…); pick it up.
+export async function consumeRedirect() {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (h.get('error_description')) { history.replaceState(null, '', gameUrl()); throw new Error(h.get('error_description').replace(/\+/g, ' ')); }
+  const at = h.get('access_token'); if (!at) return null;
+  history.replaceState(null, '', gameUrl());   // tidy the address bar
+  session = { access_token: at, refresh_token: h.get('refresh_token'), expires_at: +h.get('expires_at') || Math.floor(Date.now() / 1000) + (+h.get('expires_in') || 3600), lastSync: 0 };
+  session.user = await api('/auth/v1/user', { headers: { Authorization: 'Bearer ' + at } });
+  keep();
   return session.user;
 }
 export function signOut() { session = null; keep(); }
