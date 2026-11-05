@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.23';
+export const APP_VERSION = '0.24';
 import { loadSprites } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen } from './render.js';
 
@@ -899,7 +899,7 @@ $('#expGrid').addEventListener('click', e => {
   renderExp();
   const nt = $(`#expGrid .tile[data-i="${i}"]`); if (nt) nt.classList.add('pop');
   if (r.story) modal(`<div class="bigart">${exArt('ruin', '🏚️', 'bigimg')}</div><h2>${r.story.name}</h2><div class="say">${r.story.text}</div>
-      <p><b>${Object.entries(r.story.items).map(([k, v]) => `${ic(k)} ${v} ${nm(k)}`).join(' · ')}</b></p><p class="sub">New blueprint! Find it in the Shop under Decor.</p>
+      <p><b>${Object.entries(r.story.items).map(([k, v]) => `${ic(k)} ${v} ${nm(k)}`).join(' · ')}</b></p><p class="sub">New blueprint! Find it in Build, under Decor.</p>
       <button class="btn wide" data-act="closeModal">Amazing!</button>`);
   if (r.finished) setTimeout(() => { sfx.levelUp(); modal(`<div class="bigart">${regionArt(r.finished, 'bigimg')}</div><h2>${r.finished.name} explored!</h2>
       <p>Milo is very proud of himself. ${IMG('sprites/milo-sit.webp', '🐈', 'ai')}</p><p><b>🪙 ${fmtN(r.finished.reward.coins)} · ⏳ ${r.finished.reward.hg} · ${Object.entries(r.finished.reward.items).map(([k, v]) => ic(k) + ' ' + v).join(' ')}</b></p>
@@ -1114,19 +1114,19 @@ function guideForItem(item, verb) {
     const empty = G.S.objs.find(o => o.t === 'field' && !o.crop);
     if (empty) return { text: `Tap an empty field and plant ${nm(item).toLowerCase()}`, obj: empty };
     if (growing) return { text: `Your ${nm(item).toLowerCase()} is growing. Check back soon!`, obj: growing };
-    return { text: 'All fields are busy. Buy another field in the Shop', tb: 'shop' };
+    return { text: 'All fields are busy. Add another field from Build', tb: 'shop' };
   }
   const b = makerOf(item);
   if (!b) return { text: `${verb} ${nm(item)}` };
   const o = G.findObj(b);
-  if (!o) return { text: `Build a ${BUILD[b].name} from the Shop (${BUILD[b].cat} tab)`, tb: 'shop' };
+  if (!o) return { text: `Build a ${BUILD[b].name} (tap Build, ${BUILD[b].cat} tab)`, tb: 'shop' };
   if (BUILD[b].kind === 'pen') return { text: o.animals.length ? `Feed your ${G.penAnimal(o).name.toLowerCase()}s and collect ${nm(item).toLowerCase()}` : `Tap the ${BUILD[b].name} and buy an animal`, obj: o };
   return { text: `${verb} ${nm(item)} at the ${BUILD[b].name}`, obj: o };
 }
 function guideFor(q, g) {
   if (g.type === 'have') return guideForItem(g.id, 'Make');
-  if (g.type === 'own') return G.count(g.id) ? null : { text: `Buy a ${BUILD[g.id].name} in the Shop (${BUILD[g.id].cat} tab)`, tb: 'shop' };
-  if (g.type === 'animals') { const pen = Object.keys(BUILD).find(b => BUILD[b].animal === g.id); const o = G.findObj(pen); return o ? { text: `Tap the ${BUILD[pen].name} and buy more ${g.id}s`, obj: o } : { text: `Build a ${BUILD[pen].name} from the Shop`, tb: 'shop' }; }
+  if (g.type === 'own') return G.count(g.id) ? null : { text: `Build a ${BUILD[g.id].name} (tap Build, ${BUILD[g.id].cat} tab)`, tb: 'shop' };
+  if (g.type === 'animals') { const pen = Object.keys(BUILD).find(b => BUILD[b].animal === g.id); const o = G.findObj(pen); return o ? { text: `Tap the ${BUILD[pen].name} and buy more ${g.id}s`, obj: o } : { text: `Build a ${BUILD[pen].name} (tap Build, Animals tab)`, tb: 'shop' }; }
   if (g.type !== 'stat') return { text: g.label };
   const [k, arg] = g.key.split(':');
   switch (k) {
@@ -1194,7 +1194,7 @@ document.querySelectorAll('[data-tb]').forEach(btn => btn.addEventListener('clic
   const k = btn.dataset.tb;
   if (k === 'explore' && Q.hasFlag('expedition')) { openExpedition(); return; }
   if (sheetFn && $('#sheetTitle').dataset.k === k) { closeSheet(); $('#sheetTitle').dataset.k = ''; return; }
-  ({ shop: () => openSheet('Shop', shopSheet), quests: () => openSheet('Quests', questsSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet),
+  ({ shop: () => openSheet('Build', shopSheet), quests: () => openSheet('Quests', questsSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet),
      explore: () => openSheet('Explore', exploreSheet), menu: () => openSheet('Menu', menuSheet) })[k]();
   $('#sheetTitle').dataset.k = k;
 }));
