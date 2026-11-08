@@ -182,6 +182,8 @@ export const BUILD = {
   station:      { name: 'Train Station', cat: 'Town', kind: 'station', w: 3, h: 2, lvl: 5, cost: () => 400, mats: { planks: 4, nails: 2 }, max: one, wall: '#B9573F', roof: '#3D4A57', hgt: 34, icon: '🚂', desc: 'Freight trains bring big contracts.' },
 
   path:    { name: 'Cobble Path', cat: 'Decor', kind: 'path',  w: 1, h: 1, lvl: 1, cost: () => 2,   max: inf, icon: '⬜' },
+  gravel:  { name: 'Gravel Road', cat: 'Decor', kind: 'path',  w: 1, h: 1, lvl: 1, cost: () => 1,   max: inf, icon: '🪨', desc: 'A crunchy gravel road.' },
+  dirt:    { name: 'Dirt Road',   cat: 'Decor', kind: 'path',  w: 1, h: 1, lvl: 1, cost: () => 1,   max: inf, icon: '🟫', desc: 'A packed dirt farm road.' },
   fence:   { name: 'Fence',       cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 1, cost: () => 5,   max: inf, charm: 0, icon: '🚧' },
   flowers: { name: 'Flower Bed',  cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 2, cost: () => 15,  max: inf, charm: 1, icon: '🌷' },
   hedge:   { name: 'Hedge',       cat: 'Decor', kind: 'decor', w: 1, h: 1, lvl: 3, cost: () => 20,  max: inf, charm: 1, icon: '🌿' },

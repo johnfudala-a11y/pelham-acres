@@ -1,7 +1,7 @@
 // Pelham Acres service worker: network-first so updates show up right away,
 // with a cached copy so the game still opens offline.
-const CACHE = 'pelham-acres-v34';
-const FILES = ['./', 'index.html', 'css/style.css', 'js/main.js', 'js/game.js', 'js/render.js', 'js/data.js', 'js/audio.js', 'js/story.js', 'js/quests.js', 'js/expedition.js', 'js/nav.js', 'js/extras.js', 'js/cloud.js','manifest.webmanifest', 'icons/icon-192.png'];
+const CACHE = 'pelham-acres-v35';
+const FILES = ['./', 'index.html', 'css/style.css', 'js/main.js', 'js/game.js', 'js/render.js', 'js/data.js', 'js/audio.js', 'js/story.js', 'js/quests.js', 'js/expedition.js', 'js/nav.js', 'js/extras.js', 'js/cloud.js', 'js/roads.js', 'js/train.js','manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

@@ -3,6 +3,8 @@
 import { TW, TH, MAP, BUILD, CROPS, ITEMS } from './data.js';
 import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState } from './game.js';
 import { setNavGrid, planTo, wander, stepWalker, isWalking, unstick, walkable } from './nav.js';
+import { roadTexture, ROAD_TEX, ROAD_STYLE } from './roads.js';
+import { drawTrainScene } from './train.js';
 
 export const cam = { x: 0, y: 0, z: 1 };
 export const view = { ghost: null, floaters: [], plantCrop: null, guide: null };
@@ -221,7 +223,75 @@ function drawField(o, t) {
   }
 }
 
-function drawPath(o) { poly(diamond(o.x, o.y, 1, 1, 1), '#CFC6B4', 'rgba(90,80,60,.35)'); const [cx, cy] = P(o.x + 0.5, o.y + 0.5); ctx.fillStyle = 'rgba(120,110,90,.35)'; for (const [dx, dy] of [[-8, 0], [6, -3], [2, 5]]) { ctx.beginPath(); ctx.ellipse(cx + dx, cy + dy, 5, 2.5, 0, 0, 7); ctx.fill(); } }
+// ---------- roads: cobble, gravel and dirt, textured in perspective and joined seamlessly ----------
+let roadAt = new Map();
+const isRoad = (x, y) => roadAt.has(x * 1000 + y);
+let fenceAt = new Set();
+function indexRoads() {
+  roadAt = new Map(); fenceAt = new Set();
+  for (const o of S.objs) { if (BUILD[o.t].kind === 'path') roadAt.set(o.x * 1000 + o.y, o.t); else if (o.t === 'fence') fenceAt.add(o.x * 1000 + o.y); }
+}
+const roadPat = {};
+function roadPattern(t) {
+  if (roadPat[t] !== undefined) return roadPat[t];
+  const p = ctx.createPattern(roadTexture(t), 'repeat');
+  if (p && p.setTransform) { p.setTransform(new DOMMatrix([2 / ROAD_TEX, 0, 0, 2 / ROAD_TEX, 0, 0])); return (roadPat[t] = p); }
+  return (roadPat[t] = null);
+}
+// gentle, stable wobble for ragged road edges (same value for the same spot on the map)
+const wob = (u, v) => 0.5 + 0.25 * Math.sin(u * 23.7 + v * 11.3) + 0.15 * Math.sin(u * 61.1 - v * 47.9) + 0.1 * Math.sin(u * 7.3 + v * 19.1);
+// the four sides of a tile in grid space: start corner, end corner, inward direction, neighbour offset
+const SIDES = [[[0, 0], [1, 0], [0, 1], [0, -1]], [[1, 0], [1, 1], [-1, 0], [1, 0]], [[1, 1], [0, 1], [0, -1], [0, 1]], [[0, 1], [0, 0], [1, 0], [-1, 0]]];
+const TUFT_COL = { Spring: ['#6FAE3E', '#8CC152', '#558F31'], Summer: ['#5E9A35', '#7DB246', '#4A7F2A'], Fall: ['#9C9A3E', '#B5A24A', '#7E7E33'], Winter: ['#E8EEF2', '#C9D3D8', '#AEB9BF'] };
+function drawPath(o) {
+  const st = ROAD_STYLE[o.t] || ROAD_STYLE.path, x = o.x, y = o.y, se = season();
+  const open = SIDES.map(sd => !isRoad(x + sd[3][0], y + sd[3][1]));
+  // outline: open sides pulled in a little (ragged for gravel and dirt), joined sides pushed out a hair to hide seams
+  const pts = [];
+  SIDES.forEach((sd, i) => {
+    const [a, b, n] = sd, steps = open[i] && st.ragged ? 6 : 1;
+    for (let k = 0; k <= steps; k++) {
+      const f = k / steps, u = x + a[0] + (b[0] - a[0]) * f, v = y + a[1] + (b[1] - a[1]) * f;
+      const off = open[i] ? st.inset + st.ragged * (k === 0 || k === steps ? 0.5 : wob(u, v)) : -0.006;
+      pts.push([u + n[0] * off, v + n[1] * off]);
+    }
+  });
+  ctx.save();
+  ctx.transform(hw, hh, -hw, hh, 0, 0);          // draw in grid space so the texture lies flat on the ground
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath();
+  const pat = roadPattern(o.t);
+  if (pat) { ctx.fillStyle = pat; ctx.fill(); ctx.clip(); }
+  else { ctx.clip(); ctx.drawImage(roadTexture(o.t), x - (x % 2), y - (y % 2), 2, 2); }
+  // a soft rim along open edges so the road sits down into the grass
+  SIDES.forEach((sd, i) => {
+    if (!open[i]) return;
+    const [a, , n] = sd, e0 = [x + a[0] + n[0] * st.inset, y + a[1] + n[1] * st.inset];
+    const g = ctx.createLinearGradient(e0[0], e0[1], e0[0] + n[0] * 0.16, e0[1] + n[1] * 0.16);
+    g.addColorStop(0, st.rim); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 0.1, y - 0.1, 1.2, 1.2);
+  });
+  if (se.name === 'Winter') { ctx.fillStyle = 'rgba(240,245,250,.42)'; ctx.fillRect(x - 0.1, y - 0.1, 1.2, 1.2); }
+  else if (se.name === 'Fall') { ctx.fillStyle = 'rgba(190,120,40,.08)'; ctx.fillRect(x - 0.1, y - 0.1, 1.2, 1.2); }
+  ctx.restore();
+  // little grass tufts creeping over the open edges
+  const cols = TUFT_COL[se.name] || TUFT_COL.Summer;
+  ctx.lineCap = 'round';
+  SIDES.forEach((sd, i) => {
+    if (!open[i]) return;
+    const [a, b, n] = sd, count = Math.round(st.tuft * 2 + hash(o.x * 97 + o.y * 13 + i) * 1.6);
+    for (let k = 0; k < count; k++) {
+      const f = 0.15 + 0.7 * hash(o.x * 31 + o.y * 17 + i * 7 + k * 5), u = x + a[0] + (b[0] - a[0]) * f + n[0] * st.inset, v = y + a[1] + (b[1] - a[1]) * f + n[1] * st.inset;
+      const [px, py] = P(u, v), s = 0.8 + hash(k * 11 + o.x + o.y * 3) * 0.6;
+      for (let j = 0; j < 5; j++) {
+        const ang = -Math.PI / 2 + (j - 2) * 0.38 + (hash(j + k * 9 + o.x) - 0.5) * 0.3, len = (3.2 + hash(j * 3 + k + o.y) * 2.6) * s;
+        ctx.strokeStyle = cols[j % 3]; ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(px + (j - 2) * 0.9, py + 1);
+        ctx.quadraticCurveTo(px + (j - 2) * 0.9 + Math.cos(ang) * len * 0.4, py + Math.sin(ang) * len * 0.6, px + (j - 2) * 0.9 + Math.cos(ang) * len, py + 1 + Math.sin(ang) * len);
+        ctx.stroke();
+      }
+    }
+  });
+}
 
 function drawTree(o, t) {
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
@@ -244,18 +314,7 @@ function drawTree(o, t) {
   if (dots) { ctx.fillStyle = dots; for (const [dx, dy] of [[6, -26], [-8, -24], [2, -40], [-2, -30], [9, -35]]) { ctx.beginPath(); ctx.arc(cx + dx * s + sway, cy + dy * s, 2.2, 0, 7); ctx.fill(); } }
 }
 const SEASONS_IDX = se => ['Spring', 'Summer', 'Fall', 'Winter'].indexOf(se.name);
-function drawTrain(o, b, t) {
-  const st = trainState(o);
-  if (st.status !== 'here') return;
-  // a little freight train parked along the front of the station
-  const cars = ['#2F3E46', '#B8432F', '#3A6EA5', '#6B8E23', '#C9A27A'];
-  for (let i = 0; i < cars.length; i++) {
-    const gx = o.x + b.w + 0.15, gy = o.y - 0.6 + i * 0.75;
-    const filled = i === 0 || (st.train.crates[i - 1] && st.train.crates[i - 1].filled);
-    drawBoxPlain(gx, gy, 0.55, 0.6, i === 0 ? 16 : 11, filled ? cars[i] : '#9A978F');
-    if (i === 0) { const [sx, sy] = P(gx + 0.3, gy + 0.2); ctx.fillStyle = `rgba(240,240,240,${0.5 + 0.3 * Math.sin(t / 300)})`; ctx.beginPath(); ctx.arc(sx, sy - 24 - (t / 40 % 10), 4, 0, 7); ctx.fill(); }
-  }
-}
+function drawTrain(o, b, t) { drawTrainScene(ctx, o, b, trainState(o), t, performance.now()); }
 // falling snow / leaves / petals, drawn in screen space
 function drawWeather(pt) {
   const si = SEASONS_IDX(season());
@@ -472,6 +531,57 @@ function drawFenceRun(p1, p2, n, leftFace, gate) {
   }
 }
 
+// A white picket fence that joins up with the fences next to it (straight runs, corners and T's).
+function drawPicketFence(o) {
+  const x = o.x, y = o.y, isF = (i, j) => fenceAt.has(i * 1000 + j);
+  const xm = isF(x - 1, y), xp = isF(x + 1, y), ym = isF(x, y - 1), yp = isF(x, y + 1), C = [x + 0.5, y + 0.5];
+  const segs = [];   // each run goes from far to near, so pickets overlap correctly
+  if (!(xm || xp || ym || yp)) segs.push([[x, y + 0.5], [x + 1, y + 0.5]]);
+  else {
+    const lone = (xm + xp + ym + yp) === 1;
+    if (ym || (lone && yp)) segs.push([[x + 0.5, y], C]);
+    if (xm || (lone && xp)) segs.push([[x, y + 0.5], C]);
+    if (xp || (lone && xm)) segs.push([C, [x + 1, y + 0.5]]);
+    if (yp || (lone && ym)) segs.push([C, [x + 0.5, y + 1]]);
+  }
+  ctx.save(); ctx.lineJoin = 'round';
+  // soft shadow along the ground
+  ctx.strokeStyle = 'rgba(40,30,15,.2)'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+  for (const [A, B] of segs) { const p = P(...A), q = P(...B); ctx.beginPath(); ctx.moveTo(p[0] + 2.5, p[1] + 1.5); ctx.lineTo(q[0] + 2.5, q[1] + 1.5); ctx.stroke(); }
+  const OUT = 'rgba(95,80,60,.55)';
+  for (const [A, B] of segs) {
+    const alongX = A[1] === B[1];                     // runs along x face the lower left, which sits in shade
+    const face = alongX ? '#E3DCCD' : '#F7F2E8', edge = alongX ? '#C2B8A5' : '#D6CDBC';
+    const p = P(...A), q = P(...B), dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+    // two rails behind the pickets
+    for (const h of [4.5, 10]) {
+      ctx.fillStyle = edge; ctx.strokeStyle = OUT; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(p[0], p[1] - h); ctx.lineTo(q[0], q[1] - h); ctx.lineTo(q[0], q[1] - h + 2); ctx.lineTo(p[0], p[1] - h + 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    // pickets with pointed tops
+    const n = Math.max(2, Math.round(len / 5.4));
+    for (let k = 0; k < n; k++) {
+      const f = (k + 0.5) / n, bx = p[0] + dx * f, by = p[1] + dy * f, w = 1.55, hgt = 12.5;
+      ctx.beginPath();
+      ctx.moveTo(bx - ux * w, by - uy * w); ctx.lineTo(bx + ux * w, by + uy * w);
+      ctx.lineTo(bx + ux * w, by + uy * w - hgt); ctx.lineTo(bx, by - hgt - 2.6); ctx.lineTo(bx - ux * w, by - uy * w - hgt);
+      ctx.closePath(); ctx.fillStyle = face; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 0.55; ctx.stroke();
+      // thin shaded edge for thickness
+      ctx.strokeStyle = edge; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(bx + ux * w + 0.5, by + uy * w); ctx.lineTo(bx + ux * w + 0.5, by + uy * w - hgt); ctx.stroke();
+    }
+  }
+  // posts where runs meet or end, with little caps
+  const posts = segs.length === 1 && !(xm || xp || ym || yp) ? [[x, y + 0.5], [x + 1, y + 0.5]] : [C];
+  for (const g of posts) {
+    const [px, py] = P(...g), h = 15;
+    ctx.fillStyle = '#D9D1C1'; ctx.fillRect(px - 2.4, py - h, 2.4, h);
+    ctx.fillStyle = '#FBF8F1'; ctx.fillRect(px, py - h, 2.4, h);
+    ctx.strokeStyle = OUT; ctx.lineWidth = 0.55; ctx.strokeRect(px - 2.4, py - h, 4.8, h);
+    ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.moveTo(px - 3, py - h); ctx.lineTo(px, py - h - 2.4); ctx.lineTo(px + 3, py - h); ctx.lineTo(px, py - h + 1.2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawDecor(o, b, t) {
   const [cx, cy] = P(o.x + b.w / 2, o.y + b.h / 2);
   switch (o.t) {
@@ -483,12 +593,7 @@ function drawDecor(o, b, t) {
     }
     case 'hedge': drawBoxPlain(o.x + 0.1, o.y + 0.1, 0.8, 0.8, 14, '#3E7D2E'); break;
     case 'bench': drawBoxPlain(o.x + 0.25, o.y + 0.35, 0.5, 0.3, 7, '#8E5B2E'); break;
-    case 'fence': {
-      const a = P(o.x, o.y + 0.5), c = P(o.x + 1, o.y + 0.5); ctx.strokeStyle = '#F2EBDD'; ctx.lineWidth = 2.5;
-      for (const hgt of [5, 11]) { ctx.beginPath(); ctx.moveTo(a[0], a[1] - hgt); ctx.lineTo(c[0], c[1] - hgt); ctx.stroke(); }
-      for (let k = 0; k <= 3; k++) { const x = a[0] + (c[0] - a[0]) * k / 3, y = a[1] + (c[1] - a[1]) * k / 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 15); ctx.stroke(); }
-      break;
-    }
+    case 'fence': drawPicketFence(o); break;
     case 'lamp': {
       ctx.strokeStyle = '#2F3E46'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 34); ctx.stroke();
       const glow = 0.75 + Math.sin(t / 500 + o.id) * 0.2;
@@ -914,6 +1019,7 @@ export function draw() {
     return (a.x + A.w / 2 + a.y + A.h / 2) - (b.x + B.w / 2 + b.y + B.h / 2) || a.x - b.x;
   });
   updateCats(pt);
+  indexRoads();
   for (const o of flat) BUILD[o.t].kind === 'field' ? drawField(o, t) : drawPath(o);
   if (g) drawGhostFootprint(g);
   // draw tall objects, cats, and townsfolk in depth order

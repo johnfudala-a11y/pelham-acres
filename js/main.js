@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.34';
+export const APP_VERSION = '0.35';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -831,7 +831,7 @@ function infoSheet(o) {
   let html = '';
   if (b.kind === 'civic') html += `<p>A proud landmark of ${G.S.town}. Adds <b>+${b.charm} charm</b>.</p>`;
   if (b.kind === 'decor') html += `<p>${b.charm ? `Adds +${b.charm} charm (decorations count up to ${DECOR_CHARM_CAP}).` : 'Purely for looks.'}</p>`;
-  if (b.kind === 'path') html += '<p>A tidy cobblestone path.</p>';
+  if (b.kind === 'path') html += `<p>${{ path: 'A tidy cobblestone path.', gravel: 'A crunchy gravel road.', dirt: 'A packed dirt farm road.' }[o.t] || 'A road.'}</p>`;
   html += `<p class="sub">Town charm: <b>${G.charm()}</b> → orders pay <b>+${G.charm()}%</b> coins.</p>${moveBtn(o)}`;
   return html;
 }

@@ -1,7 +1,7 @@
 // Pelham Acres — walking routes for the cats and townsfolk.
 // Walkers move tile-to-tile along A* paths, so they go around trees, rocks,
 // buildings, fences and decorations instead of through them.
-import { MAP } from './data.js';
+import { MAP, BUILD } from './data.js';
 
 let objAt = () => null;
 export const setNavGrid = fn => { objAt = fn; };
@@ -12,7 +12,7 @@ const LO = 7, HI = 23; // walkers stay around the farmyard and town
 export function walkable(w, x, y) {
   if (x < LO || y < LO || x > HI || y > HI) return false;
   const o = objAt(x, y);
-  if (!o || o.t === 'path') return true;
+  if (!o || BUILD[o.t].kind === 'path') return true;
   // cats are nimble: they can trot across fields and hop onto benches and flower beds
   if (w.cat) return o.t === 'field' || o.t === 'bench' || o.t === 'flowers';
   return false;
