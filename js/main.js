@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.35';
+export const APP_VERSION = '0.36';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -316,7 +316,7 @@ for (const id of ['lvlPill', 'coinPill', 'hgPill', 'storePill', 'seasonPill']) $
 $('#hudTip').addEventListener('click', e => {
   const b = e.target.closest('[data-tip]'); if (!b) return;
   $('#hudTip').hidden = true; tipFor = null;
-  if (b.dataset.tip === 'barn') { openSheet('Barn', barnSheet); $('#sheetTitle').dataset.k = 'barn'; }
+  if (b.dataset.tip === 'barn') { openSheet('Barn', barnSheet, barnObj()); $('#sheetTitle').dataset.k = 'barn'; }
   else { questTab = 'fair'; openSheet('Quests', questsSheet); $('#sheetTitle').dataset.k = 'quests'; }
 });
 // While a description box is open, the next tap anywhere outside it only closes it: the tap is swallowed,
@@ -844,6 +844,7 @@ function obstacleSheet(o) {
     <p class="sub">The Workshop makes 2 ${nm(tool).toLowerCase()}s from just 1 wood and 1 stone.</p>`;
 }
 let barnTab = 'all';
+const barnObj = () => G.S.objs.find(o => o.t === 'barn') || null;
 function barnSheet() {
   const used = G.storageUsed(), cap = G.storageCap(), up = G.barnUpgradeCost(), full = used >= cap;
   // what the townsfolk are asking for right now, so you know what to keep
@@ -866,6 +867,7 @@ function barnSheet() {
     <button class="btn sm alt" data-act="sell" data-id="${id}" data-n="1">Sell 1</button></div>`).join('') + '</div>';
   html += `<h3>Upgrade barn (+30 space)</h3><div class="row"><span class="req ${G.S.coins >= up.coins ? 'ok' : 'no'}">🪙 ${fmtN(up.coins)}</span>${req('wood', up.wood)}${req('stone', up.stone)}
     <button class="btn sm" data-act="upgradeBarn">Upgrade</button></div>`;
+  const bo = barnObj(); if (bo) html += `<br>${moveBtn(bo)}`;
   return html;
 }
 let shopTab = 'Farm';
@@ -1491,7 +1493,7 @@ document.querySelectorAll('[data-tb]').forEach(btn => btn.addEventListener('clic
   const k = btn.dataset.tb;
   if (k === 'explore' && Q.hasFlag('expedition')) { openExpedition(); return; }
   if (sheetFn && $('#sheetTitle').dataset.k === k) { closeSheet(); $('#sheetTitle').dataset.k = ''; return; }
-  ({ shop: () => openSheet('Build', shopSheet), quests: () => openSheet('Quests', questsSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet),
+  ({ shop: () => openSheet('Build', shopSheet), quests: () => openSheet('Quests', questsSheet), orders: () => openSheet('Orders', ordersSheet), barn: () => openSheet('Barn', barnSheet, barnObj()),
      explore: () => openSheet('Explore', exploreSheet), menu: () => openSheet('Menu', menuSheet) })[k]();
   $('#sheetTitle').dataset.k = k;
 }));
