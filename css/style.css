@@ -516,3 +516,38 @@ textarea { width: 100%; height: 90px; border-radius: 12px; border: 2px solid var
   .grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
   .goal { grid-template-columns: 26px 1fr 40px 34px auto; }
 }
+
+/* ---------- Over the Ridge: land for sale, fishing ---------- */
+.landhead { display: flex; gap: 12px; align-items: center; }
+.landhead .landart { width: 76px; height: 76px; flex: none; }
+.landhead p { margin: 4px 0; }
+.row.center { justify-content: center; }
+.btn.big { font-size: 19px; padding: 13px 26px; border-radius: 16px; }
+.fishpond { position: relative; height: 190px; margin: 10px 0 8px; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 30%, #7FC3DB 0%, #4F98B8 55%, #3B7698 100%);
+  border: 4px solid #8C7A55; box-shadow: inset 0 6px 18px rgba(0,30,60,.35); }
+.fishpond::before { content: ''; position: absolute; inset: 0; opacity: .5;
+  background: repeating-linear-gradient(170deg, transparent 0 22px, rgba(255,255,255,.18) 22px 24px, transparent 24px 46px);
+  animation: fishdrift 6s linear infinite; }
+@keyframes fishdrift { from { background-position: 0 0; } to { background-position: 120px 46px; } }
+.fishpond .line { position: absolute; left: 50%; top: -10px; width: 2px; height: 104px; background: rgba(255,255,255,.75); transform-origin: top; transform: rotate(-14deg); }
+.fishpond.idle .line, .fishpond.early .line, .fishpond.late .line, .fishpond.full .line, .fishpond.caught .line { display: none; }
+.fishpond .bobber { position: absolute; left: calc(50% + 18px); top: 92px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%;
+  background: linear-gradient(180deg, #E8443A 0 50%, #FFFFFF 50% 100%); border: 2px solid #5A2A1A; box-shadow: 0 3px 0 rgba(0,0,0,.2);
+  animation: bob 1.6s ease-in-out infinite; }
+.fishpond.idle .bobber, .fishpond.early .bobber, .fishpond.late .bobber, .fishpond.full .bobber, .fishpond.caught .bobber { display: none; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+.fishpond.bite .bobber { animation: dip .28s ease-in-out infinite; }
+@keyframes dip { 0%, 100% { transform: translateY(2px) rotate(-8deg); } 50% { transform: translateY(12px) rotate(10deg); } }
+.fishpond .ripple { position: absolute; left: calc(50% + 18px); top: 112px; width: 30px; height: 10px; margin-left: -15px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.55); opacity: 0; }
+.fishpond.wait .ripple, .fishpond.bite .ripple { animation: ripple 2.2s ease-out infinite; }
+.fishpond.bite .ripple { animation-duration: .6s; }
+.fishpond .r2 { animation-delay: 1.1s !important; }
+@keyframes ripple { 0% { transform: scale(.4); opacity: .9; } 100% { transform: scale(3.2); opacity: 0; } }
+.fishpond .catch { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; animation: leap .7s cubic-bezier(.2,1.4,.4,1); }
+.fishpond .catchart { width: 128px; height: 128px; filter: drop-shadow(0 6px 6px rgba(0,0,0,.3)); }
+@keyframes leap { 0% { transform: translateY(60px) scale(.5) rotate(-30deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.fishmsg { min-height: 24px; font-size: 16px; margin: 4px 0 10px; }
+.btn.reel { animation: reelpulse .5s ease-in-out infinite alternate; }
+@keyframes reelpulse { from { transform: scale(1); } to { transform: scale(1.06); } }

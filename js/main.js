@@ -1,5 +1,5 @@
 // Pelham Acres — input, menus, and the game loop.
-import { BUILD, CROPS, ITEMS, PRODUCTS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER } from './data.js';
+import { BUILD, CROPS, ITEMS, PRODUCTS, RECIPES, ANIMALS, MATS, SHOP_CATS, VALUE, xpFor, unlocksAt, CROP_YIELD, DECOR_CHARM_CAP, MASTERY, MASTERY_PERKS, NO_ORDER, LAND, landAt, FRUIT, FISH } from './data.js';
 import * as G from './game.js';
 import { initAudio, sfx, setMusic, setSfx, setVolume, audioRunning } from './audio.js';
 import * as Q from './quests.js';
@@ -7,7 +7,7 @@ import { PEOPLE, QUEST_BY_ID, CHAPTERS } from './story.js';
 import * as X from './expedition.js';
 import * as E from './extras.js';
 import * as C from './cloud.js';
-export const APP_VERSION = '0.36';
+export const APP_VERSION = '0.40';
 import { loadSprites, spriteProgress } from './render.js';
 import { cam, view, initRender, draw, centerOn, s2w, zoomAt, clampCam, hit, floater, screenSize, cats, setCatGrid, catGo, people, setPeople, setErrands, tileCenterScreen, penCheer } from './render.js';
 
@@ -17,11 +17,14 @@ const now = G.now;
 const em = id => ITEMS[id]?.icon || '❔';                       // plain-text emoji, for toasts and floaters
 const IMG = (src, fb, cls = 'ai') => `<img class="${cls}" src="${src}" alt="" draggable="false" onerror="this.replaceWith('${fb}')">`;
 const BUILD_SPR = new Set(['barn', 'feedMill', 'bakery', 'workshop', 'dairy', 'sugarMill', 'kitchen', 'loom', 'cafe', 'cottage', 'farmhouse', 'townhouse', 'manor',
-  'townHall', 'generalStore', 'schoolhouse', 'clockTower', 'bandstand', 'station', 'flowers', 'hedge', 'bench', 'lamp', 'pond', 'gazebo', 'fountain', 'windmill', 'coop', 'cowshed', 'sheepfold']);
+  'townHall', 'generalStore', 'schoolhouse', 'clockTower', 'bandstand', 'station', 'flowers', 'hedge', 'bench', 'lamp', 'pond', 'gazebo', 'fountain', 'windmill', 'coop', 'cowshed', 'sheepfold',
+  'goatYard', 'pigPen', 'beehive', 'ciderPress', 'creamery', 'honeyHouse', 'fishingHut', 'glasshouse']);
 function art(id, cls) {
   if (CROPS[id]) return IMG(`sprites/crop-${id}.webp`, CROPS[id].icon, cls);
   if (PRODUCTS[id]) return IMG(`sprites/icon-${id}.webp`, PRODUCTS[id].icon, cls);
   if (ANIMALS[id]) return IMG(`sprites/${id}.webp`, ANIMALS[id].icon, cls);
+  if (BUILD[id] && BUILD[id].kind === 'orchard') return IMG(`sprites/tree-${BUILD[id].fruit}.webp`, BUILD[id].icon, cls);
+  if (id === 'landDeed') return IMG('sprites/icon-landDeed.webp', '📜', cls);
   if (BUILD[id]) return IMG(id === 'windmill' ? 'sprites/windmill-full.webp' : BUILD_SPR.has(id) ? `sprites/${id}.webp` : `sprites/icon-${id}.webp`, BUILD[id].icon, cls);
   return ITEMS[id]?.icon || '❔';
 }
@@ -30,7 +33,7 @@ const icH = id => art(id);
 const ui = (n, fb) => IMG(`sprites/icon-${n}.webp`, fb, 'ui');
 const face = (pid, cls = 'face') => PEOPLE[pid] ? IMG(`sprites/p-${pid}.webp`, PEOPLE[pid].icon, cls) : ui('mail', '✉️');
 // order customers who are townsfolk get their portrait
-const WHO_PID = { 'Farmer Joe': 'joe', 'Old Tom': 'tom', 'Rosa at the Inn': 'rosa', 'The Mayor': 'hattie', 'Grandma Ellis': 'ellis', 'Dottie': 'dottie', 'Mr. Finch': 'finch' };
+const WHO_PID = { 'Farmer Joe': 'joe', 'Old Tom': 'tom', 'Rosa at the Inn': 'rosa', 'The Mayor': 'hattie', 'Grandma Ellis': 'ellis', 'Dottie': 'dottie', 'Mr. Finch': 'finch', 'Bea the Beekeeper': 'bea', 'Hank': 'hank' };
 // swap the coin / hourglass / star / energy emoji in menu HTML for painted icons
 // (fallbacks are empty so the swap never runs inside its own onerror attribute)
 const PAINT = [['🪙', ui('coin', '')], ['⏳', ui('hourglass', '')], ['⭐', ui('star', '')], ['⚡', ui('energy', '')]];
@@ -227,6 +230,9 @@ function itemOrigin(id) {
     const a = ANIMALS[k], pen = Object.keys(BUILD).find(b => BUILD[b].animal === k);
     return `${art(k, 'ai')} <span>Comes from your <b>${a.name.toLowerCase()}s</b> at the ${BUILD[pen].name}. Feed them ${art(a.feed)} ${esc(nm(a.feed).toLowerCase())} and collect it when it's ready.</span>`;
   }
+  if (FRUIT[id]) { const f = FRUIT[id], b = BUILD[f.tree]; return `${art(f.tree, 'ai')} <span>Picked from your <b>${b.name}s</b>: ${f.yield} at a time, about every <b>${secs(G.fruitRegrow(id))}</b>.${G.S.level < b.lvl ? ` Unlocks at level ${b.lvl}.` : ''}</span>`; }
+  if (id === 'honey') return `${art('beehive', 'ai')} <span>Your <b>beehives</b> fill with honey on their own. Tap a hive to collect it.${G.S.level < BUILD.beehive.lvl ? ` Unlocks at level ${BUILD.beehive.lvl}.` : ''}</span>`;
+  if (FISH[id]) return `${art('fishingHut', 'ai')} <span>Caught at the <b>Fishing Hut</b> on the river with ${art('bait')} worm bait.${id === 'goldenCarp' ? ' Rare, and quick to slip the hook!' : ''}</span>`;
   if (id === 'wood') return `${ui('axe', '')} <span>Clear trees to get wood. Every tree gives 1–2.</span>`;
   if (id === 'stone') return `${ui('pickaxe', '')} <span>Clear rocks to get stone. Every rock gives 1–2.</span>`;
   return `<span>Found while exploring, on the freight train, and as gifts.</span>`;
@@ -387,7 +393,8 @@ function confirmPlace() {
   if (!g.ok) {
     sfx.error();
     const why = G.placeProblem(g.t, g.x, g.y, g.move);
-    toast(why === 'crowded' ? 'Too close to another building. Leave one square of space between buildings.' : why === 'edge' ? "That's off the edge of your land" : "Can't place there. Something's in the way.");
+    toast(why === 'crowded' ? 'Too close to another building. Leave one square of space between buildings.' : why === 'edge' ? "That's off the edge of your land"
+      : why === 'locked' ? "That land isn't yours yet. Tap its For Sale sign to buy it." : why === 'water' ? 'The Fishing Hut has to sit right beside the river.' : "Can't place there. Something's in the way.");
     return;
   }
   if (g.move) {
@@ -463,6 +470,20 @@ function act(el) {
       if (f && !f.crop) tryPlant(f);
       break;
     }
+    case 'buyLand': {
+      if (G.buyLand(d.id)) {
+        const l = LAND.find(x => x.id === d.id); sfx.fanfare(); haptic(true); confetti(); closeSheet();
+        centerOn((l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2); refreshHud(); G.save();
+        modal(`<div class="bigart">${art('landDeed', 'bigimg')}</div><h2>${l.name} is yours!</h2><p>${l.blurb}</p><p class="sub">Clear the woods to make room, then build whatever you like.</p><button class="btn wide" data-act="closeModal">Wonderful</button>`);
+      } else { sfx.error(); toast(G.landBlock(LAND.find(x => x.id === d.id)) || "Can't buy that yet"); }
+      return;
+    }
+    case 'pickTree': pickTree(o); break;
+    case 'collectHoney': collectHive(o); break;
+    case 'fishing': openFishing(); return;
+    case 'cast': castLine(); return;
+    case 'reel': reelIn(); return;
+    case 'stopFishing': stopFishing(); return;
     case 'hgField': case 'hg': if (G.useHourglass(o)) { sfx.hourglass(); toast('⏳ Time skipped!'); } else { sfx.error(); toast('No hourglasses left'); } break;
     case 'make': {
       const r = G.queueJob(o, +d.i);
@@ -537,6 +558,7 @@ function act(el) {
     case 'upgradeBarn': if (G.upgradeBarn()) { sfx.build(); toast('Barn upgraded! +30 space'); } else { sfx.error(); toast('Need more coins or materials'); } break;
     case 'tab': sfx.tap(); shopTab = d.tab; $('#sheetBody').scrollTop = 0; break;
     case 'btab': sfx.tap(); barnTab = d.tab; $('#sheetBody').scrollTop = 0; break;
+    case 'viewLand': { const l = LAND.find(x => x.id === d.id); closeSheet(); centerOn((l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2); setTimeout(() => openLand(l), 250); return; }
     case 'buy': { const blk = G.buyBlock(d.t); if (blk) { sfx.error(); toast(blk); break; } sfx.tap(); startPlacing(d.t); return; }
     case 'export': { const ta = $('#saveText'); ta.value = G.exportSave(); ta.select(); try { navigator.clipboard.writeText(ta.value); toast('Save copied'); } catch (e) {} return; }
     case 'import': {
@@ -569,7 +591,7 @@ function collectProducer(o) {
   if (full) { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); }
   return got.length;
 }
-function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : sfx.baa)(); }
+function animalSound(o) { const a = BUILD[o.t].animal; (a === 'chicken' ? sfx.cluck : a === 'cow' ? sfx.moo : a === 'pig' ? sfx.oink : sfx.baa)(); }
 function collectPen(o) {
   const { got, full } = G.collectAnimals(o);
   if (got) { const pr = G.penAnimal(o).product; sfx.collect(); haptic(); floater(o.x + 1, o.y + 1, `+${got}`, '#fff', pr); flyTo(o.x + 1, o.y + 1, pr, '[data-tb=barn]', got); penCheer(o, 'collect'); }
@@ -717,6 +739,7 @@ function tapObject(o) {
   if (o.cat) return petCat(o.cat);
   if (o.person) return talkTo(o.person);
   const b = BUILD[o.t];
+  if (G.landLocked(o.x, o.y)) return openLand(landAt(o.x, o.y));
   if (b.kind !== 'field') Object.defineProperty(o, '_squish', { value: performance.now(), writable: true, configurable: true, enumerable: false }); // (not saved)
   switch (b.kind) {
     case 'field':
@@ -729,10 +752,122 @@ function tapObject(o) {
     case 'house': if (collectHouse(o)) { G.save(); return; } return openSheet(b.name, () => houseSheet(o), o);
     case 'storage': return openSheet('Barn', () => barnSheet(), o);
     case 'station': sfx.tap(); return openSheet('Train Station', () => stationSheet(o), o);
+    case 'orchard': if (G.treeReady(o)) { pickTree(o); G.save(); refreshHud(); return; } return openSheet(b.name, () => orchardSheet(o), o);
+    case 'hive': if (G.honeyDue(o)) { collectHive(o); G.save(); refreshHud(); return; } return openSheet(b.name, () => hiveSheet(o), o);
+    case 'fishing': sfx.tap(); return openSheet(b.name, () => fishingSheet(o), o);
+    case 'water': return openSheet('Pelham River', () => riverSheet(), o);
     case 'obstacle': return openSheet(`Clear ${b.name.toLowerCase()}`, () => obstacleSheet(o), o);
     default: return openSheet(b.name, () => infoSheet(o), o);
   }
 }
+// ---------- land for sale ----------
+function openLand(l) { if (!l) return; sfx.open(); openSheet(l.name, () => landSheet(l)); }
+function landSheet(l) {
+  const blk = G.landBlock(l), w = l.x1 - l.x0 + 1, h = l.y1 - l.y0 + 1;
+  return `<div class="landhead">${art('landDeed', 'landart')}<div><p>${l.blurb}</p><p class="sub">${w * h} squares of land · thick woods to clear</p></div></div>
+    <h3>Price</h3><div class="row reqs"><span class="req ${G.S.coins >= l.coins ? 'ok' : 'no'}">🪙 ${fmtN(l.coins)}</span>${reqs(l.mats)}${G.S.level < l.lvl ? `<span class="req no">Level ${l.lvl}</span>` : ''}</div>
+    <button class="btn wide ${blk ? 'off' : 'gold'}" data-act="buyLand" data-id="${l.id}">${blk && blk !== 'Not enough coins' && blk !== 'Need more materials' ? blk : `Buy ${l.name}`}</button>`;
+}
+function landListHtml() {
+  const open = LAND.filter(l => !G.ownsLand(l.id)); if (!open.length) return '';
+  return `<h3>Land for sale</h3><div class="grid">${open.map(l => { const blk = G.landBlock(l); return `<div class="card ${blk ? (G.S.level < l.lvl ? 'locked' : 'short') : 'buy'}">
+      <div class="big">${art('landDeed')}</div><div class="nm">${l.name}</div><div class="meta">${(l.x1 - l.x0 + 1) * (l.y1 - l.y0 + 1)} squares${G.S.level < l.lvl ? ` · Level ${l.lvl}` : ''}</div>
+      <div class="row reqs"><span class="req ${G.S.coins >= l.coins ? 'ok' : 'no'}">🪙 ${fmtN(l.coins)}</span>${reqs(l.mats)}</div>
+      <button class="btn sm ${blk ? 'off' : ''}" data-act="viewLand" data-id="${l.id}">See the land</button></div>`; }).join('')}</div>`;
+}
+// ---------- orchards ----------
+function pickTree(o) {
+  const r = G.pickFruit(o);
+  if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
+  if (!r) return false;
+  sfx.harvest(); haptic();
+  floater(o.x + 0.5, o.y + 0.2, `+${r.n}`, r.n > FRUIT[r.fruit].yield ? '#FFE9A8' : '#fff', r.fruit); flyTo(o.x + 0.5, o.y + 0.5, r.fruit, '[data-tb=barn]', 2);
+  const k = E.rollKeepsake('harvest'); if (k) setTimeout(() => foundKeepsake(k), 500);
+  return true;
+}
+function orchardSheet(o) {
+  const f = G.treeFruit(o), fr = FRUIT[f], t = now();
+  const stage = G.treeMature(o) ? 'Leafy and setting fruit' : 'Young tree, still growing';
+  const start = G.treeMature(o) ? o.ready - G.fruitRegrow(f) * 1000 : o.planted;
+  return `<div class="penloop"><div class="pl">${art(o.t, 'plart')}<small>${stage}</small></div><div class="arrow">→</div>
+      <div class="pl">${art(f, 'plart')}<b>${fr.yield}</b><small>${fr.name.toLowerCase()}s every ${secs(Math.round(G.fruitRegrow(f)))}</small></div></div>
+    <p>${fr.icon} Ripe in <b data-end="${o.ready}">${fmtT(o.ready - t)}</b></p>
+    <div class="bar"><div data-bar data-s="${start}" data-e="${o.ready}"></div></div>
+    <p class="sub">${fr.name} mastery ${starStr('crop', f)} · ${masteryLine('crop', f)}${o.picks ? ` · picked ${o.picks}×` : ''}</p>
+    <div class="row"><button class="btn gold" data-act="hg">⏳ Ripen now (${G.S.hg})</button><span class="spacer"></span>${moveBtn(o)}</div>`;
+}
+// ---------- beehives ----------
+function collectHive(o) {
+  const n = G.collectHoney(o);
+  if (n === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
+  if (!n) return false;
+  sfx.collect(); haptic();
+  floater(o.x + 0.5, o.y + 0.3, `+${n}`, '#fff', 'honey'); flyTo(o.x + 0.5, o.y + 0.5, 'honey', '[data-tb=barn]', n);
+  return true;
+}
+function hiveSheet(o) {
+  const n = G.honeyDue(o), next = G.honeyNextAt(o), boosted = G.S.objs.filter(f => f.t === 'field' && G.beeBoost(f) < 1).length;
+  return `<div class="penloop"><div class="pl">${art('beehive', 'plart')}<small>busy bees</small></div><div class="arrow">→</div>
+      <div class="pl">${art('honey', 'plart')}<b>${n}/${G.HIVE_CAP}</b><small>honey ready</small></div></div>
+    ${n ? `<button class="btn gold" data-act="collectHoney">Collect ${n} honey</button>` : `<p>Next jar in <b data-end="${next}">${fmtT(next - now())}</b></p>`}
+    <p class="sub">A hive holds up to ${G.HIVE_CAP} jars, one every ${secs(Math.round(G.hiveMs() / 1000))}. Fields within 2 squares of a hive grow <b>15% faster</b> (${boosted} field${boosted === 1 ? '' : 's'} buzzing now).</p>
+    ${moveBtn(o)}`;
+}
+// ---------- the river & fishing ----------
+function riverSheet() {
+  const hut = G.findObj('fishingHut');
+  return `<p>The Pelham River winds through Riverside on its way to the sea. Perch, trout and whiskery catfish live here, and old-timers swear there's a <b>golden carp</b> too.</p>
+    ${hut ? '<button class="btn gold" data-act="fishing">🎣 Go fishing</button>' : `<p class="sub">Build a <b>Fishing Hut</b> right beside the water to fish here (Build → Production).</p>`}`;
+}
+function fishingSheet(o) {
+  const caught = Object.keys(FISH).map(k => `<span class="chip">${art(k)} ${G.getStat('fish:' + k)}</span>`).join(' ');
+  return `<p>Cast a line with ${art('bait')} <b>worm bait</b> (you have <b>${G.have('bait')}</b>). When the bobber dips, tap <b>Reel in!</b> quickly.</p>
+    <div class="row"><button class="btn gold" data-act="fishing">🎣 Go fishing</button></div>
+    <p class="sub">Make bait at the Workshop from a carrot and some wheat (4 at a time).</p>
+    <h3>Your catch so far</h3><div class="chips">${caught}</div>
+    <br>${moveBtn(o)}`;
+}
+const fish = { state: 'idle', timer: 0, bite: 0, cast: null, last: null };
+function fishingHtml() {
+  const s = fish.state, bait = G.have('bait'), c = fish.last;
+  const msg = { idle: bait ? 'Tap <b>Cast</b> to drop your line in.' : 'Out of bait! Make some at the Workshop.', wait: 'Waiting for a nibble… don\'t tap yet!',
+    bite: '<b>A bite!</b> Reel in!', early: 'Too soon! The fish was spooked.', late: 'It got away…', caught: c ? `You caught a <b>${nm(c)}</b>!` : '', full: 'Your barn is full! Make room first.' }[s] || '';
+  return `<h2>Gone Fishing</h2>
+    <div class="fishpond ${s}"><div class="ripple r1"></div><div class="ripple r2"></div><div class="line"></div><div class="bobber"></div>
+      ${s === 'caught' && c ? `<div class="catch">${art(c, 'catchart')}</div>` : ''}</div>
+    <p class="fishmsg">${msg}</p>
+    <div class="row center">${s === 'wait' || s === 'bite' ? '<button class="btn gold big reel" data-act="reel">Reel in!</button>'
+      : `<button class="btn ${bait ? 'gold' : 'off'} big" data-act="cast">Cast${bait ? ` · ${bait} bait left` : ''}</button>`}</div>
+    <div class="row center" style="margin-top:8px"><button class="btn alt sm" data-act="stopFishing">Done fishing</button></div>`;
+}
+function renderFishing() { if (!$('#modal').hidden && $('#modalCard .fishpond')) $('#modalCard').innerHTML = paint(fishingHtml()); }
+function openFishing() { closeSheet(); fish.state = 'idle'; fish.last = null; sfx.open(); modal(fishingHtml()); }
+function castLine() {
+  if (fish.state === 'wait' || fish.state === 'bite') return;
+  const c = G.castLine(); if (!c) { sfx.error(); toast('Out of worm bait'); return; }
+  fish.cast = c; fish.state = 'wait'; sfx.plant(); renderFishing(); refreshHud();
+  clearTimeout(fish.timer);
+  fish.timer = setTimeout(() => {
+    if (fish.state !== 'wait') return;
+    fish.state = 'bite'; fish.bite = performance.now(); sfx.tap(); haptic(true); renderFishing();
+    fish.timer = setTimeout(() => { if (fish.state === 'bite') { fish.state = 'late'; sfx.error(); renderFishing(); G.save(); } }, c.window * 1000);
+  }, c.wait * 1000);
+}
+function reelIn() {
+  clearTimeout(fish.timer);
+  if (fish.state === 'wait') { fish.state = 'early'; sfx.error(); renderFishing(); G.save(); return; }
+  if (fish.state !== 'bite') return;
+  const id = fish.cast.fish, r = G.landFish(id);
+  if (r === 'full') { fish.state = 'full'; sfx.error(); renderFishing(); return; }
+  fish.state = 'caught'; fish.last = id; sfx.harvest(); sfx.collect(); haptic(true);
+  if (id === 'goldenCarp') confetti();
+  renderFishing(); refreshHud(); G.save();
+  // the river gives up its treasures now and then (and May's locket, once Grandma Ellis asks about it)
+  let k = Q.activeQuests().some(q => q.id === 'locket') && !E.hasKeepsake('locket') && Math.random() < 0.3 ? E.giveKeepsake('locket') : null;
+  if (!k) k = E.rollKeepsake('fish');
+  if (k) setTimeout(() => { stopFishing(); foundKeepsake(k); }, 1400);
+}
+function stopFishing() { clearTimeout(fish.timer); fish.state = 'idle'; closeModal(); G.save(); refreshHud(); }
 function harvestField(o) {
   const c = o.crop, r = G.harvest(o);
   if (r === 'full') { sfx.error(); toast('Barn is full! Sell or upgrade in the Barn.'); return false; }
@@ -901,6 +1036,7 @@ function shopSheet() {
   };
   const open = list.filter(x => x.st !== 'locked'), locked = list.filter(x => x.st === 'locked');
   let html = `<div class="tabs">${tabs}</div>`;
+  if (shopTab === 'Farm') html += landListHtml();
   html += open.length ? `<div class="grid">${open.map(card).join('')}</div>` : '<p class="sub">Nothing here yet. Keep leveling up!</p>';
   if (locked.length) html += `<h3 class="soon">Coming later</h3><div class="soonlist">${locked.map(({ k, b, noBp }) =>
     `<div class="soonrow">${art(k, 'si')}<span class="nm">${b.name}</span><span class="spacer"></span><span class="lk">${noBp && G.S.level >= b.lvl ? '🗺️ ' + b.needsText : 'Level ' + b.lvl}</span></div>`).join('')}</div>`;
@@ -1046,7 +1182,7 @@ function scrollToFrontier() {
 function closeExpedition() { $('#exp').hidden = true; sfx.close(); G.save(); refreshHud(); }
 // painted expedition art: one picture per kind of square, plus region badges
 const exArt = (n, fb, cls = 'ex') => IMG(`sprites/ex-${n}.webp`, fb, cls);
-const REGION_ART = { woods: 'pine', hills: 'hills', lake: 'lantern' };
+const REGION_ART = { woods: 'pine', hills: 'hills', lake: 'lantern', ridge: 'hills' };
 const regionArt = (r, cls) => exArt(REGION_ART[r.id] || 'pine', r.icon, cls);
 function renderExp() {
   const reg = X.REGIONS.find(r => r.id === expRegion), L = X.layout(reg);
@@ -1150,6 +1286,9 @@ function rewardLine(r) {
 function goalIcon(g) {
   const id = g.id || (g.key && g.key.includes(':') ? g.key.split(':')[1] : null);
   if (id && (ITEMS[id] || BUILD[id] || ANIMALS[id])) return art(id, 'gi');
+  if (g.type === 'flag' && g.id.startsWith('land_')) return art('landDeed', 'gi');
+  if (g.type === 'flag' && g.id.startsWith('bp_')) return exArt('hills', '🗺️', 'gi');
+  if (g.type === 'keepsake') return ksArt(g.id, 'gi');
   if (g.key && g.key.startsWith('pet')) return IMG(`sprites/${g.key.includes('milo') ? 'milo' : 'ollie'}.webp`, '🐈', 'gi');
   return ui('scroll', '•').replace('class="ui"', 'class="gi"');
 }
@@ -1397,6 +1536,9 @@ $('#coach').addEventListener('click', e => { const a = e.target.closest('[data-a
 function makerOf(item) {
   for (const b in RECIPES) if (RECIPES[b].some(r => r.out === item)) return b;
   for (const b in BUILD) if (BUILD[b].kind === 'pen' && ANIMALS[BUILD[b].animal].product === item) return b;
+  if (FRUIT[item]) return FRUIT[item].tree;
+  if (item === 'honey') return 'beehive';
+  if (FISH[item]) return 'fishingHut';
   return null;
 }
 function nearestObstacle() {
@@ -1418,6 +1560,9 @@ function guideForItem(item, verb) {
   if (!b) return { text: `${verb} ${nm(item)}` };
   const o = G.findObj(b);
   if (!o) return { text: `Build a ${BUILD[b].name} (tap Build, ${BUILD[b].cat} tab)`, tb: 'shop' };
+  if (BUILD[b].kind === 'orchard') { const r = G.S.objs.find(x => x.t === b && G.treeReady(x)); return r ? { text: `Tap the ${BUILD[b].name.toLowerCase()} to pick its fruit`, obj: r } : { text: `Your ${BUILD[b].name.toLowerCase()}s are ripening`, obj: o }; }
+  if (b === 'beehive') return { text: 'Tap a beehive to collect its honey', obj: G.S.objs.find(x => x.t === 'beehive' && G.honeyDue(x)) || o };
+  if (b === 'fishingHut') return { text: 'Tap the Fishing Hut and go fishing', obj: o };
   if (BUILD[b].kind === 'pen') return { text: o.animals.length ? `Feed your ${G.penAnimal(o).name.toLowerCase()}s and collect ${nm(item).toLowerCase()}` : `Tap the ${BUILD[b].name} and buy an animal`, obj: o };
   return { text: `${verb} ${nm(item)} at the ${BUILD[b].name}`, obj: o };
 }
@@ -1425,10 +1570,15 @@ function guideFor(q, g) {
   if (g.type === 'have') return guideForItem(g.id, 'Make');
   if (g.type === 'own') return G.count(g.id) ? null : { text: `Build a ${BUILD[g.id].name} (tap Build, ${BUILD[g.id].cat} tab)`, tb: 'shop' };
   if (g.type === 'animals') { const pen = Object.keys(BUILD).find(b => BUILD[b].animal === g.id); const o = G.findObj(pen); return o ? { text: `Tap the ${BUILD[pen].name} and buy more ${g.id}s`, obj: o } : { text: `Build a ${BUILD[pen].name} (tap Build, Animals tab)`, tb: 'shop' }; }
+  if (g.type === 'flag' && g.id.startsWith('land_')) { const l = LAND.find(x => 'land_' + x.id === g.id); return { text: `Buy ${l.name}: tap its For Sale sign`, gx: (l.x0 + l.x1) / 2, gy: (l.y0 + l.y1) / 2 }; }
+  if (g.type === 'flag' && g.id.startsWith('bp_')) return { text: 'Tap Explore and head up Misty Ridge', tb: 'explore' };
+  if (g.type === 'keepsake') { const o = G.findObj('fishingHut'); return o ? { text: 'Keep fishing at the Fishing Hut', obj: o } : { text: 'Build a Fishing Hut by the river', tb: 'shop' }; }
   if (g.type !== 'stat') return { text: g.label };
   const [k, arg] = g.key.split(':');
   switch (k) {
     case 'harvest': return guideForItem(arg, 'Grow');
+    case 'pick': return guideForItem(arg, 'Pick');
+    case 'fish': return guideForItem(arg && FISH[arg] ? arg : 'perch', 'Catch');
     case 'make': return guideForItem(arg, 'Make');
     case 'deliver': return { text: 'Open Orders and deliver goods to the townsfolk', tb: 'orders' };
     case 'crate': { const o = G.findObj('station'); return o ? { text: 'Load crates onto the freight train', obj: o } : { text: 'Build the Train Station', tb: 'shop' }; }
@@ -1446,7 +1596,7 @@ function goTo(g, label) {
   if (!g) { toast(`${label || 'That'} is already done!`); return; }
   closeSheet(); closeModal();
   view.pinGuide = { ...g, until: now() + 90000 };
-  const tgt = g.obj ? { x: g.obj.x + BUILD[g.obj.t].w / 2, y: g.obj.y + BUILD[g.obj.t].h / 2 } : g.walker ? { x: g.walker.x, y: g.walker.y } : null;
+  const tgt = g.obj ? { x: g.obj.x + BUILD[g.obj.t].w / 2, y: g.obj.y + BUILD[g.obj.t].h / 2 } : g.walker ? { x: g.walker.x, y: g.walker.y } : g.gx != null ? { x: g.gx, y: g.gy } : null;
   if (tgt) centerOn(tgt.x, tgt.y);
   sfx.tap(); applyGuide();
   toast(g.text);
@@ -1577,7 +1727,11 @@ function onTap(sx, sy) {
     if (o && o.t === 'field' && !o.crop) { tryPlant(o); refreshHud(); return; }
     endPlant();
   }
-  if (!o) { closeSheet(); return; }
+  if (!o) {
+    const w = s2w(sx, sy), tx = Math.floor(w.x), ty = Math.floor(w.y);
+    if (G.landLocked(tx, ty)) { openLand(landAt(tx, ty)); return; }
+    closeSheet(); return;
+  }
   tapObject(o);
   G.save(); refreshHud();
 }
@@ -1599,7 +1753,9 @@ const ROUTINES = {
   tom:    { workshop: 'gear', tree: 'axe', rock: 'pickaxe', fence: 'planks', station: 'nails', bench: 'nails', schoolhouse: 'planks' },
   rosa:   { cafe: 'coffeeCup', kitchen: 'tomatoSauce', cottage: 'mail', farmhouse: 'mail', townhouse: 'mail', pond: 'heart', flowers: 'blossom', generalStore: 'basket' },
   finch:  { generalStore: 'coin', station: 'crate', barn: 'journal', townHall: 'scroll', loom: 'cottonFabric', bakery: 'bread' },
-  ellis:  { bench: 'heart', flowers: 'blossom', pond: 'heart', hedge: 'blossom', coop: 'chickenFeed', loom: 'yarn', gazebo: 'blossom' },
+  ellis:  { bench: 'heart', flowers: 'blossom', pond: 'heart', hedge: 'blossom', coop: 'chickenFeed', loom: 'yarn', gazebo: 'blossom', glasshouse: 'blossom' },
+  bea:    { beehive: 'honey', honeyHouse: 'beeswaxCandle', flowers: 'blossom', appleTree: 'blossom', cherryTree: 'blossom', peachTree: 'blossom', field: 'heart' },
+  hank:   { goatYard: 'goatFeed', pigPen: 'pigFeed', creamery: 'goatCheese', sheepfold: 'wool', fishingHut: 'perch', ciderPress: 'appleCider' },
 };
 setErrands(id => {
   const r = ROUTINES[id]; if (!r) return [];
@@ -1706,6 +1862,8 @@ function readyReport() {
     else if (b.kind === 'producer') for (const j of o.jobs) { if (j.end <= t) add(j.out, j.n); }
     else if (b.kind === 'pen') { const a = G.penAnimal(o); for (const an of o.animals) if (G.animalState(an) === 'ready') add(a.product, 1); }
     else if (b.kind === 'house') r.rent += G.rentDue(o) * G.rentOf(o);
+    else if (b.kind === 'hive') { const n = G.honeyDue(o); if (n) add('honey', n); }
+    else if (b.kind === 'orchard' && G.treeReady(o)) add(b.fruit, FRUIT[b.fruit].yield);
     else if (b.kind === 'station' && G.trainState(o).status === 'here') r.train = true;
   }
   r.energyFull = Q.hasFlag('expedition') && X.energy() >= X.ENERGY.max;
@@ -1737,6 +1895,8 @@ function collectAll() {
     else if (k === 'producer') { const r = G.collectJobs(o); items += r.got.reduce((s, j) => s + j.n, 0); if (r.full) { full = true; break; } }
     else if (k === 'pen') { const r = G.collectAnimals(o); items += r.got; G.feedAll(o); if (r.full) { full = true; break; } }
     else if (k === 'house') coins += G.collectRent(o);
+    else if (k === 'hive') { const n = G.collectHoney(o); if (n === 'full') { full = true; break; } items += n; }
+    else if (k === 'orchard' && G.treeReady(o)) { const r = G.pickFruit(o); if (r === 'full') { full = true; break; } if (r) items += r.n; }
   }
   if (items || coins) sfx.collect();
   closeModal();

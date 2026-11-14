@@ -148,6 +148,7 @@ export const sfx = {
   baa()     { if (!ok() || throttle('animal', 400)) return; const t = T(); const o = ctx.createOscillator(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain(), f = ctx.createBiquadFilter();
               o.type = 'sawtooth'; o.frequency.value = 300; lfo.frequency.value = 22; lg.gain.value = 25; lfo.connect(lg); lg.connect(o.frequency); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 2;
               o.connect(f); f.connect(g); g.connect(sfxBus); env(g, t, 0.04, 0.18, 0.5); o.start(t); lfo.start(t); o.stop(t + 0.6); lfo.stop(t + 0.6); },
+  oink()    { if (!ok() || throttle('animal', 400)) return; const t = T(); [0, 0.16].forEach(d => { tone(230, t + d, { type: 'sawtooth', dur: 0.12, vol: 0.07, slideTo: 150, filter: 900 }); noise(t + d, { dur: 0.1, vol: 0.05, type: 'lowpass', freq: 600 }); }); },
   // the cats
   meow(big) { if (!ok() || throttle('meow', 250)) return; meow(T(), big); },
   purr()    { if (!ok()) return; const t = T(); const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 220;

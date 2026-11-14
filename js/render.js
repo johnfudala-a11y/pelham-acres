@@ -1,7 +1,7 @@
 // Pelham Acres — isometric canvas renderer. Placeholder art drawn in code;
 // later each type can be swapped for an AI-generated sprite via SPRITES.
-import { TW, TH, MAP, BUILD, CROPS, ITEMS } from './data.js';
-import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState } from './game.js';
+import { TW, TH, MAP, BUILD, CROPS, ITEMS, LAND, FRUIT, RIVER, RIVER_W } from './data.js';
+import { S, now, fieldReady, jobsDone, animalState, rentDue, penAnimal, season, trainState, ownsLand, honeyDue, treeReady, treeMature, fruitGrow, fruitRegrow } from './game.js';
 import { setNavGrid, planTo, wander, stepWalker, isWalking, unstick, walkable } from './nav.js';
 import { roadTexture, ROAD_TEX, ROAD_STYLE } from './roads.js';
 import { drawTrainScene } from './train.js';
@@ -20,12 +20,14 @@ const SPRITE_CFG = {
   cottage: { k: 1, iso: 1 }, farmhouse: { k: 1, iso: 1 }, townhouse: { k: 0.85, iso: 1 }, manor: { k: 1, iso: 1 },
   townHall: { k: 1, iso: 1 }, generalStore: { k: 1, iso: 1 }, schoolhouse: { k: 1, iso: 1 }, clockTower: { k: 0.62, iso: 1 }, bandstand: { k: 1, iso: 1 }, station: { k: 1, iso: 1 },
   flowers: { k: 0.92 }, hedge: { k: 0.85 }, bench: { k: 0.88 }, lamp: { k: 0.4 }, pond: { k: 0.97 }, gazebo: { k: 1, iso: 1 }, fountain: { k: 1, iso: 1 }, windmill: { k: 0.55, iso: 1 },
+  ciderPress: { k: 1, iso: 1 }, creamery: { k: 1, iso: 1 }, honeyHouse: { k: 1, iso: 1 }, fishingHut: { k: 1.04, iso: 1 }, glasshouse: { k: 1, iso: 1 }, beehive: { k: 0.62 },
 };
-const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
+const SPRITE_NAMES = [...Object.keys(SPRITE_CFG), 'coop', 'cowshed', 'sheepfold', 'goatYard', 'pigPen', 'goat', 'pig', 'sign-sale',
+  ...['apple', 'cherry', 'peach'].flatMap(f => ['tree-' + f, 'tree-' + f + '-bare']), 'tree-sapling', 'tree-blossom', 'tree-spring', 'tree-summer', 'tree-fall', 'tree-winter', 'rock',
   'chicken', 'cow', 'sheep', 'ollie', 'ollie-sleep', 'ollie-belly', 'milo', 'milo-sleep', 'milo-pounce', 'ollie-w1', 'ollie-w2', 'milo-r1', 'milo-r2', 'milo-sit','p-hattie', 'p-joe', 'p-dottie', 'p-tom', 'p-rosa', 'p-finch', 'p-ellis',
   'soil', 'sprout', 'growing', ...Object.keys(CROPS).map(c => 'crop-' + c),
-  'tex-grass', 'tex-forest', 'windmill-sails', ...['buttercup', 'violet', 'clover', 'pebbles', 'mushroom', 'dirt', 'dandelion', 'log', 'shrub', 'duck', 'mallard', 'butterfly1', 'butterfly2', 'bird'].map(n => 'dc-' + n),
-  ...['hattie', 'joe', 'dottie', 'tom', 'rosa', 'finch', 'ellis'].flatMap(id => ['p-' + id + '-w1', 'p-' + id + '-w2'])];
+  'tex-grass', 'tex-forest', 'windmill-sails', ...['buttercup', 'violet', 'clover', 'pebbles', 'mushroom', 'dirt', 'dandelion', 'log', 'shrub', 'duck', 'mallard', 'butterfly1', 'butterfly2', 'bird', 'reeds', 'lilypads'].map(n => 'dc-' + n),
+  'p-bea', 'p-hank', ...['hattie', 'joe', 'dottie', 'tom', 'rosa', 'finch', 'ellis', 'bea', 'hank'].flatMap(id => ['p-' + id + '-w1', 'p-' + id + '-w2'])];
 export function loadSprites() {
   const load = (n, tries) => {
     const im = new Image();
@@ -126,11 +128,12 @@ function heightOf(o) {
   if (b.kind === 'pen') return 36;
   if (b.kind === 'decor') return o.t === 'lamp' ? 40 : o.t === 'windmill' ? 100 : o.t === 'gazebo' ? 50 : o.t === 'fountain' ? 36 : 18;
   if (b.kind === 'field') return o.crop ? 30 : 0;
-  if (b.kind === 'path') return 0;
+  if (b.kind === 'path' || b.kind === 'water') return 0;
+  if (b.kind === 'orchard') return treeMature(o) ? 66 : 44;
   return (b.hgt || 30) + 18 + (b.w + b.h) * 3;
 }
 // fields join the depth-sorted pass once crops are painted (ripe crops stand up off the ground)
-const isFlat = o => { const k = BUILD[o.t].kind; return k === 'path' || (k === 'field' && !spr('soil')); };
+const isFlat = o => { const k = BUILD[o.t].kind; return k === 'path' || k === 'water' || (k === 'field' && !spr('soil')); };
 
 // ---------- drawing primitives per kind ----------
 function drawBox(x, y, w, h, hgt, wall, roof, roofH, icon) {
@@ -229,7 +232,8 @@ const isRoad = (x, y) => roadAt.has(x * 1000 + y);
 let fenceAt = new Set();
 function indexRoads() {
   roadAt = new Map(); fenceAt = new Set();
-  for (const o of S.objs) { if (BUILD[o.t].kind === 'path') roadAt.set(o.x * 1000 + o.y, o.t); else if (o.t === 'fence') fenceAt.add(o.x * 1000 + o.y); }
+  waterAt = new Set();
+  for (const o of S.objs) { if (BUILD[o.t].kind === 'path') roadAt.set(o.x * 1000 + o.y, o.t); else if (o.t === 'fence') fenceAt.add(o.x * 1000 + o.y); else if (o.t === 'water') waterAt.add(o.x * 1000 + o.y); }
 }
 const roadPat = {};
 function roadPattern(t) {
@@ -293,6 +297,95 @@ function drawPath(o) {
   });
 }
 
+// ---------- the Pelham River: one smooth curve with muddy banks, drifting ripples and lily pads ----------
+let waterAt = new Set();
+const isWater = (x, y) => waterAt.has(x * 1000 + y);
+let riverPath = null;
+function drawRiver(pt, vis) {
+  if (!waterAt.size) return;
+  if (!riverPath) { riverPath = new Path2D(); RIVER.forEach(([x, y], i) => i ? riverPath.lineTo(x, y) : riverPath.moveTo(x, y)); }
+  const win = season().name === 'Winter';
+  ctx.save();
+  ctx.transform(hw, hh, -hw, hh, 0, 0);          // grid space
+  ctx.beginPath(); ctx.rect(0, 0, MAP, MAP); ctx.clip();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(70,58,30,.35)'; ctx.lineWidth = RIVER_W + 0.55; ctx.stroke(riverPath);     // damp edge
+  ctx.strokeStyle = '#8C7A55'; ctx.lineWidth = RIVER_W + 0.3; ctx.stroke(riverPath);                 // muddy bank
+  ctx.strokeStyle = win ? '#A9C6D8' : '#3F82A6'; ctx.lineWidth = RIVER_W - 0.05; ctx.stroke(riverPath); // deep water
+  ctx.strokeStyle = win ? '#C4DAE6' : '#5A9FC0'; ctx.lineWidth = RIVER_W - 0.7; ctx.stroke(riverPath);  // lighter middle
+  ctx.strokeStyle = win ? 'rgba(255,255,255,.45)' : 'rgba(150,205,228,.55)'; ctx.lineWidth = 0.5; ctx.stroke(riverPath);
+  if (!win) {   // ripples drifting downstream
+    ctx.setLineDash([0.35, 1.4]); ctx.lineDashOffset = -pt / 900;
+    ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 0.06; ctx.stroke(riverPath);
+    ctx.setLineDash([0.2, 2.1]); ctx.lineDashOffset = -pt / 700 + 0.9;
+    ctx.save(); ctx.translate(0.45, -0.25); ctx.stroke(riverPath); ctx.restore();
+    ctx.save(); ctx.translate(-0.4, 0.3); ctx.lineDashOffset = -pt / 1100 + 0.4; ctx.stroke(riverPath); ctx.restore();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+  // lily pads here and there on calm water
+  const lp = spr('dc-lilypads');
+  if (lp && !win) for (const k of waterAt) {
+    const x = Math.floor(k / 1000), y = k % 1000; if (hash(x * 17 + y * 131) > 0.2) continue;
+    const [cx, cy] = P(x + 0.5, y + 0.5); if (!vis(cx, cy)) continue;
+    drawSprite(lp, cx + Math.sin(pt / 2600 + x) * 1.5, cy + 6, 28, hash(x + y) < 0.5, true);
+  }
+}
+// ---------- orchard trees: sapling → blossom → leafy → laden with fruit ----------
+function drawOrchard(o, t) {
+  const f = BUILD[o.t].fruit, [cx, cy] = P(o.x + 0.5, o.y + 0.5), sway = Math.sin(t / 1100 + o.id) * 0.8;
+  let name;
+  if (!treeMature(o)) name = (o.ready - t) > fruitGrow(f) * 500 ? 'tree-sapling' : 'tree-blossom';
+  else name = treeReady(o) ? 'tree-' + f : 'tree-' + f + '-bare';
+  const im = spr(name);
+  const w = name === 'tree-sapling' || name === 'tree-blossom' ? 36 : 54;
+  if (im) drawSprite(im, cx + sway * 0.4, cy + 9, w, (o.id & 1) === 1);
+  else emoji(FRUIT[f].icon, cx, cy - 12, 18);
+  if (treeReady(o) && ((t / 900 + o.id) % 3) < 0.25) { ctx.fillStyle = 'rgba(255,255,255,.9)'; star(cx + 10, cy - 38, 3); }
+}
+// ---------- bees buzzing around a hive ----------
+function drawBees(o, t) {
+  const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
+  for (let i = 0; i < 4; i++) {
+    const a = t / (380 + i * 90) + i * 1.7, r = 9 + i * 3;
+    const bx = cx + Math.cos(a) * r, by = cy - 20 + Math.sin(a * 1.3) * r * 0.5 - i * 2;
+    ctx.fillStyle = '#F2B53A'; ctx.beginPath(); ctx.ellipse(bx, by, 1.7, 1.2, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(40,30,10,.8)'; ctx.fillRect(bx - 0.3, by - 1.1, 0.7, 2.2);
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.beginPath(); ctx.ellipse(bx - 0.6, by - 1.5, 1, 0.6, -0.5, 0, 7); ctx.fill();
+  }
+}
+// ---------- land for sale: a soft mist over parcels you don't own yet, with a sign on each ----------
+function drawLandForSale(pt) {
+  if (!S.land || Object.keys(S.land).length < LAND.length) {
+    for (const l of LAND) {
+      if (ownsLand(l.id)) continue;
+      const d = diamond(l.x0, l.y0, l.x1 - l.x0 + 1, l.y1 - l.y0 + 1);
+      ctx.save();
+      ctx.beginPath(); ctx.moveTo(...d[0]); for (let i = 1; i < 4; i++) ctx.lineTo(...d[i]); ctx.closePath();
+      ctx.fillStyle = 'rgba(232,238,242,.42)'; ctx.fill();
+      ctx.setLineDash([10, 8]); ctx.lineDashOffset = -pt / 120; ctx.strokeStyle = 'rgba(255,248,230,.85)'; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+function drawLandSigns(t) {
+  const im = spr('sign-sale');
+  for (const l of LAND) {
+    if (ownsLand(l.id)) continue;
+    const sx = l.id === 'orchard' ? 31.5 : l.id === 'pasture' ? 15 : 31.5, sy = l.id === 'orchard' ? 15 : l.id === 'pasture' ? 31.5 : 31.5;
+    const [px, py] = P(sx, sy), bob = Math.sin(t / 900 + sx) * 1.5;
+    if (im) drawSprite(im, px, py + 6, 58, false);
+    ctx.save();
+    ctx.font = '700 11px "Fredoka", -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const txt = l.name, sub = 'For sale · Lv ' + l.lvl, w = Math.max(ctx.measureText(txt).width, ctx.measureText(sub).width) + 18;
+    const y = py - 66 + bob;
+    ctx.fillStyle = 'rgba(255,246,226,.96)'; ctx.strokeStyle = '#8A5A2F'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px - w / 2, y - 15, w, 30, 9) : ctx.rect(px - w / 2, y - 15, w, 30); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#5A3A1A'; ctx.fillText(txt, px, y - 5);
+    ctx.font = '600 9px "Fredoka", -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#8A5A2F'; ctx.fillText(sub, px, y + 7);
+    ctx.restore();
+  }
+}
 function drawTree(o, t) {
   const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
   const v = hash(o.id), s = 0.85 + v * 0.35, sway = Math.sin(t / 900 + o.id) * 1.2;
@@ -342,6 +435,8 @@ function drawRock(o) {
 // idle/graze = how long (ms) they stand around or keep their head down; walk = how far they go in one trip.
 const HERD_SPEC = {
   chicken: { speed: 0.75, stride: 0.09, hop: 1.6, waddle: 0.14, idle: [500, 1800], graze: [900, 2600], walk: [0.3, 1.0], space: 0.28 },
+  goat:    { speed: 0.42, stride: 0.16, hop: 2.2, waddle: 0.06, idle: [900, 2600], graze: [2000, 5000], walk: [0.4, 1.2], space: 0.45 },
+  pig:     { speed: 0.22, stride: 0.2,  hop: 0.8, waddle: 0.05, idle: [2000, 5000], graze: [3500, 9000], walk: [0.3, 0.9], space: 0.5 },
   cow:     { speed: 0.2,  stride: 0.3,  hop: 0.7, waddle: 0.03, idle: [2500, 6000], graze: [5000, 12000], walk: [0.4, 1.1], space: 0.6 },
   sheep:   { speed: 0.3,  stride: 0.22, hop: 1.0, waddle: 0.05, idle: [1800, 4500], graze: [3500, 9000], walk: [0.3, 1.0], space: 0.48 },
 };
@@ -414,7 +509,7 @@ function drawPen(o, b, t) {
   const shel = spr(o.t);
   if (shel) { const [sx] = P(o.x + 0.5, o.y + 0.5), sy = P(o.x + 1, o.y + 1)[1]; drawSprite(shel, sx, sy + 3, TW * 1.12, false); }
   else drawBox(o.x + 0.1, o.y + 0.1, 0.9, 0.9, 18, b.wall, b.roof, 12, null);
-  const a = penAnimal(o), aim = spr(b.animal), aw = { chicken: 22, cow: 38, sheep: 32 }[b.animal];
+  const a = penAnimal(o), aim = spr(b.animal), aw = { chicken: 22, cow: 38, sheep: 32, goat: 31, pig: 32 }[b.animal] || 30;
   const sp = HERD_SPEC[b.animal] || HERD_SPEC.sheep;
   const members = o.animals.map((an, i) => ({ an, i, m: herdStep(o, b, i, an, sp, t) }));
   members.sort((p, q) => (p.m.u + p.m.v) - (q.m.u + q.m.v)).forEach(({ an, i, m }) => {
@@ -719,6 +814,9 @@ function drawStatus(o, b, t) {
   } else if (b.kind === 'house') {
     const due = rentDue(o);
     if (due > 0) bubble(x, y, 'coin', { count: due, t, seed });
+  } else if (b.kind === 'hive') {
+    const n = honeyDue(o);
+    if (n > 0) bubble(x, y + 6, 'honey', { count: n, t, seed });
   } else if (b.kind === 'station') {
     const st = trainState(o);
     if (st.status === 'here') { const all = st.train.crates.every(c => c.filled); bubble(x, y, all ? 'ribbon' : 'crate', { mode: all ? 'ready' : 'need', t, seed }); }
@@ -728,7 +826,7 @@ function drawStatus(o, b, t) {
 // ---------- main draw ----------
 let drawList = [];
 // ---------- ambient life: chimney smoke, sparkling water, ducks, butterflies, birds ----------
-const SMOKE = { cottage: [0.18, 0.86], farmhouse: [0.2, 0.88], townhouse: [0.12, 0.9], manor: [0.22, 0.86], bakery: [0.16, 0.9], kitchen: [0.18, 0.88], cafe: [0.15, 0.88], workshop: [0.2, 0.86], schoolhouse: [0.05, 0.9] };
+const SMOKE = { ciderPress: [0.24, 0.94], honeyHouse: [0.27, 0.9], cottage: [0.18, 0.86], farmhouse: [0.2, 0.88], townhouse: [0.12, 0.9], manor: [0.22, 0.86], bakery: [0.16, 0.9], kitchen: [0.18, 0.88], cafe: [0.15, 0.88], workshop: [0.2, 0.86], schoolhouse: [0.05, 0.9] };
 function spriteBox(o) {   // where an isometric building's picture sits: centre x, bottom y, width, height
   const b = BUILD[o.t], cfg = SPRITE_CFG[o.t], im = cfg && spr(o.t); if (!im) return null;
   const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1] + 3, w = footW(b) * cfg.k;
@@ -895,7 +993,7 @@ function drawLighting(pt, tall) {
     for (const o of tall) {
       const b = BUILD[o.t]; let gx, gy, r, a;
       if (o.t === 'lamp') { [gx, gy] = P(o.x + 0.5, o.y + 0.5); gy -= 36; r = 46; a = 0.5; }
-      else if (['house', 'producer', 'civic', 'station', 'storage'].includes(b.kind)) { [gx, gy] = P(o.x + b.w / 2 + 0.3, o.y + b.h / 2 + 0.3); gy -= 14; r = footW(b) * 0.42; a = 0.28; }
+      else if (['house', 'producer', 'civic', 'station', 'storage', 'fishing'].includes(b.kind)) { [gx, gy] = P(o.x + b.w / 2 + 0.3, o.y + b.h / 2 + 0.3); gy -= 14; r = footW(b) * 0.42; a = 0.28; }
       else continue;
       const flick = 0.92 + Math.sin(pt / 170 + o.id * 3) * 0.05;
       const gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
@@ -940,11 +1038,22 @@ const DECALS = ['buttercup', 'violet', 'clover', 'pebbles', 'mushroom', 'dirt', 
 const WINTER_OK = new Set(['pebbles', 'log', 'shrub', 'dirt']);
 let gridAt = () => null;
 function drawDecals(vis, se) {
+  // cattails along the riverbank
+  const rd = spr('dc-reeds');
+  if (rd && se.name !== 'Winter') for (const k of waterAt) {
+    const wx = Math.floor(k / 1000), wy = k % 1000;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const gx = wx + dx, gy = wy + dy; if (isWater(gx, gy) || gridAt(gx, gy) || hash(gx * 53 + gy * 19) > 0.45) continue;
+      const [cx, cy] = P(gx + 0.5 - dx * 0.3, gy + 0.5 - dy * 0.3); if (!vis(cx, cy)) continue;
+      drawSprite(rd, cx, cy + 6, 26 + hash(gx + gy) * 10, hash(gy * 7 + gx) < 0.5, true);
+    }
+  }
   for (let gy = 1; gy < MAP - 1; gy++) for (let gx = 1; gx < MAP - 1; gx++) {
     const h = hash(gx * 131 + gy * 977); if (h > 0.13) continue;
     const name = DECALS[Math.floor(hash(gx * 7 + gy * 3 + 5) * DECALS.length)];
     if (se.name === 'Winter' && !WINTER_OK.has(name)) continue;
     if (gridAt(gx, gy)) continue;
+    if (isWater(gx + 1, gy) || isWater(gx - 1, gy) || isWater(gx, gy + 1) || isWater(gx, gy - 1)) continue;   // the bank gets reeds instead
     const ox = hash(gx + gy * 31) * 0.5 + 0.25, oy = hash(gx * 17 + gy) * 0.5 + 0.25;
     const [cx, cy] = P(gx + ox, gy + oy); if (!vis(cx, cy)) continue;
     const im = spr('dc-' + name); if (!im) continue;
@@ -966,6 +1075,7 @@ function groundPaths() {
 }
 export function draw() {
   const t = now(), pt = performance.now();
+  indexRoads();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const se = season();
   ctx.fillStyle = se.bg; ctx.fillRect(0, 0, W, H);
@@ -1019,8 +1129,8 @@ export function draw() {
     return (a.x + A.w / 2 + a.y + A.h / 2) - (b.x + B.w / 2 + b.y + B.h / 2) || a.x - b.x;
   });
   updateCats(pt);
-  indexRoads();
-  for (const o of flat) BUILD[o.t].kind === 'field' ? drawField(o, t) : drawPath(o);
+  drawRiver(pt, vis);
+  for (const o of flat) { const k = BUILD[o.t].kind; if (k === 'water') continue; k === 'field' ? drawField(o, t) : drawPath(o); }
   if (g) drawGhostFootprint(g);
   // draw tall objects, cats, and townsfolk in depth order
   updatePeople(pt);
@@ -1041,6 +1151,8 @@ export function draw() {
     drawObj({ ...g.proto, x: g.x, y: g.y }, t);
     ctx.restore();
   }
+  drawLandForSale(pt);
+  drawLandSigns(pt);
   drawLife(pt, tall, vis);
   drawLighting(pt, tall);
   for (const o of tall) drawStatus(o, BUILD[o.t], t);
@@ -1087,7 +1199,7 @@ function drawObj(o, t) {
   const cfg = SPRITE_CFG[o.t], sp = cfg && spr(o.t);
   if (sp) {
     const [cx] = P(o.x + b.w / 2, o.y + b.h / 2), by = P(o.x + b.w, o.y + b.h)[1];
-    const lot = b.kind !== 'decor';
+    const lot = b.kind !== 'decor' && b.kind !== 'hive';
     if (lot) drawLot(o, b);
     const land = landSquash(o);
     if (land) { ctx.save(); ctx.translate(cx, by); ctx.scale(1 + land, 1 - land); ctx.translate(-cx, -by); }
@@ -1099,6 +1211,7 @@ function drawObj(o, t) {
       if (land) ctx.restore();
       buildFx(o, b, cx, by, sh);
     } else { drawSprite(sp, cx, by + 4 + (cfg.dy || 0), footW(b) * cfg.k, !!o.flip, lot); if (land) ctx.restore(); }
+    if (b.kind === 'hive') drawBees(o, t);
     landDust(o, b, cx, by);
     if (b.kind === 'station') drawTrain(o, b, t);
     if ((o.lvl || 1) > 1) drawLevelBadge(o, b);
@@ -1107,6 +1220,10 @@ function drawObj(o, t) {
   switch (b.kind) {
     case 'field': return drawField(o, t);
     case 'path': return drawPath(o);
+    case 'water': return;
+    case 'hive': { const [cx, cy] = P(o.x + 0.5, o.y + 0.5); emoji('🐝', cx, cy - 10, 18); return; }
+    case 'fishing': drawBox(o.x, o.y, b.w, b.h, b.hgt || 28, b.wall, b.roof, 16, b.icon); return;
+    case 'orchard': return drawOrchard(o, t);
     case 'obstacle': return o.t === 'tree' ? drawTree(o, t) : drawRock(o);
     case 'pen': return drawPen(o, b, t);
     case 'decor': return drawDecor(o, b, t);
@@ -1542,6 +1659,13 @@ export function hit(sx, sy) {
     if (isFlat(o)) continue;
     const inFoot = tx >= o.x && tx < o.x + b.w && ty >= o.y && ty < o.y + b.h;
     if (inFoot) return o;
+    if (b.w === 1 && b.h === 1) {
+      // single-square things (trees, hives, lamps): only their own canopy counts, so a dense orchard row
+      // doesn't swallow taps meant for the tree behind
+      const [cx, cy] = P(o.x + 0.5, o.y + 0.5);
+      if (Math.abs(wx - cx) < 14 && wy < cy - 14 && wy > cy - heightOf(o)) return o;
+      continue;
+    }
     const left = P(o.x, o.y + b.h)[0], right = P(o.x + b.w, o.y)[0];
     const top = P(o.x, o.y)[1] - heightOf(o), bottom = P(o.x + b.w / 2, o.y + b.h / 2)[1] + 2;
     const shrink = b.kind === 'obstacle' ? 10 : 4;

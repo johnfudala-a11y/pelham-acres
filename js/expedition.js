@@ -3,7 +3,8 @@
 import * as G from './game.js';
 
 export const ENERGY = { max: 30, regenMs: 120000 };
-export const FOOD = { veggieStew: 12, muffins: 9, iceCream: 6, bread: 4, cornbread: 6, cookies: 8, cheese: 5, potatoSoup: 10, carrotCake: 12, strawberryJam: 6, pumpkinPie: 15, pancakes: 12, blueberryJam: 8, coffeeCup: 8, hotCocoa: 10, mocha: 12 };
+export const FOOD = { veggieStew: 12, muffins: 9, iceCream: 6, bread: 4, cornbread: 6, cookies: 8, cheese: 5, potatoSoup: 10, carrotCake: 12, strawberryJam: 6, pumpkinPie: 15, pancakes: 12, blueberryJam: 8, coffeeCup: 8, hotCocoa: 10, mocha: 12,
+  applePie: 16, honeyCake: 16, cherryPie: 18, peachCobbler: 20, fishChowder: 18, truffleRisotto: 24, appleCider: 8, peachNectar: 10, goatCheese: 7 };
 
 export const REGIONS = [
   { id: 'woods', name: 'Whispering Woods', icon: '🌲', lvl: 5, flag: 'expedition', seed: 101, cols: 9, rows: 13, bg: '#4E7A3A',
@@ -18,6 +19,10 @@ export const REGIONS = [
     mix: { grass: 26, brush: 18, rock: 12, water: 16, ore: 6, gemrock: 6, chest: 9, berries: 7 },
     ruin: { name: 'The Lantern Keeper\'s Cottage', text: "A tiny lakeside cottage with a weathervane on top. The keeper left a note: 'Build a windmill, and the valley will always have bread.'", bp: 'windmill', items: { gem: 3, iron: 3 } },
     reward: { coins: 2000, hg: 6, items: { gem: 5 } } },
+  { id: 'ridge', name: 'Misty Ridge', icon: '🏔️', lvl: 18, flag: 'ridgeMap', seed: 404, cols: 9, rows: 15, bg: '#6E7F86',
+    mix: { grass: 18, brush: 16, rock: 26, ore: 10, gemrock: 9, chest: 10, berries: 6, stream: 5 },
+    ruin: { name: "Great-Aunt May's Mountain Cabin", text: "A snug log cabin above the clouds, tidy as if she left yesterday. On the table, weighed down with a jar of pressed flowers: plans for a grand glasshouse, and a note. 'Build it where everyone can share it.'", bp: 'glasshouse', items: { gem: 4, iron: 4 } },
+    reward: { coins: 4000, hg: 8, items: { gem: 6, iron: 4 } } },
 ];
 
 export const TILE = {

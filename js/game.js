@@ -1,7 +1,7 @@
 // Pelham Acres — game state and rules. All timers are wall-clock timestamps,
 // so progress continues while the app is closed.
-import { CROPS, CROP_YIELD, ANIMALS, RECIPES, BUILD, VALUE, MAP, MATS, DECOR_CHARM_CAP, xpFor, MASTERY, MAX_BLVL, upgradeCost, NO_ORDER,
-         SEASONS, SEASON_MS, IN_SEASON_SPEED, IN_SEASON_BONUS, TRAIN } from './data.js';
+import { CROPS, CROP_YIELD, ANIMALS, RECIPES, BUILD, VALUE, MAP, HOME_MAP, MATS, DECOR_CHARM_CAP, xpFor, MASTERY, MAX_BLVL, upgradeCost, NO_ORDER,
+         SEASONS, SEASON_MS, IN_SEASON_SPEED, IN_SEASON_BONUS, TRAIN, FRUIT, FISH, LAND, landAt, riverDist, RIVER_W } from './data.js';
 
 export let S = null;
 export const now = () => Date.now();
@@ -15,8 +15,10 @@ export function seasonEndsAt() { const t = now(), lt = localT(t); return t + (SE
 export const inSeason = c => season().crops.includes(c);
 // Overall pace: every crop, recipe and animal takes this many times its base time (1.25 = 20% slower).
 export const TIME_SCALE = globalThis.PA_TIME_SCALE ?? 1.25; // (overridable only by the balance simulator)
-export const cropTime = c => CROPS[c].time * TIME_SCALE * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1) * perk('joe');
-export const animalTime = (o, a) => a.time * TIME_SCALE * speedOf(o) * perk('ellis');
+export const cropTime = c => CROPS[c].time * TIME_SCALE * masteryTime('crop', c) * (inSeason(c) ? IN_SEASON_SPEED : 1) * perk('joe') * glassBoost();
+// Great-Aunt May's Glasshouse: every crop grows 10% faster once it stands
+export const glassBoost = () => (S && S.objs.some(o => o.t === 'glasshouse') ? 0.9 : 1);
+export const animalTime = (o, a) => a.time * TIME_SCALE * speedOf(o) * perk('ellis') * (a === ANIMALS.goat || a === ANIMALS.pig ? perk('hank') : 1);
 
 // ---------- Neighbor friendships: hearts earned by helping each townsperson ----------
 // points come from their orders (+1, rush +2), daily favors (+2) and their quests (+2)
@@ -32,8 +34,10 @@ export const PERKS = {
   rosa:   { text: ['Rent +10%', 'Rent +20%'], kind: 'money' },
   finch:  { text: ['Order coins +5%', 'Order coins +10%'], kind: 'money' },
   hattie: { text: ['+5 town charm', '+10 town charm'], kind: 'charm' },
+  bea:    { text: ['Hives make honey 10% faster', 'Hives make honey 20% faster'], kind: 'time' },
+  hank:   { text: ['Goats & pigs produce 8% faster', 'Goats & pigs produce 15% faster'], kind: 'time' },
 };
-const PERK_VAL = { joe: [0.95, 0.9], ellis: [0.95, 0.9], dottie: [0.92, 0.85], tom: [0.9, 0.8], rosa: [1.1, 1.2], finch: [1.05, 1.1], hattie: [5, 10] };
+const PERK_VAL = { joe: [0.95, 0.9], ellis: [0.95, 0.9], dottie: [0.92, 0.85], tom: [0.9, 0.8], rosa: [1.1, 1.2], finch: [1.05, 1.1], hattie: [5, 10], bea: [0.9, 0.8], hank: [0.92, 0.85] };
 export function perk(pid) {
   if (!S) return pid === 'hattie' ? 0 : 1;
   const h = hearts(pid), v = PERK_VAL[pid];
@@ -93,6 +97,30 @@ export function rebuildGrid() {
   }
 }
 export const objAt = (x, y) => (x < 0 || y < 0 || x >= MAP || y >= MAP) ? null : grid[y * MAP + x];
+
+// ---------- Land: the squares beyond the original farm belong to you once you buy their parcel ----------
+export const ownsLand = id => !!(S.land && S.land[id]);
+export const landLocked = (x, y) => { const l = landAt(x, y); return !!l && !ownsLand(l.id); };
+export function landBlock(l) {
+  if (ownsLand(l.id)) return 'Already yours';
+  if (S.level < l.lvl) return `Unlocks at level ${l.lvl}`;
+  if (S.coins < l.coins) return 'Not enough coins';
+  if (!hasAll(l.mats)) return 'Need more materials';
+  return null;
+}
+export function buyLand(id) {
+  const l = LAND.find(x => x.id === id); if (!l || landBlock(l)) return false;
+  S.coins -= l.coins; takeAll(l.mats);
+  (S.land = S.land || {})[id] = now();
+  S.flags = S.flags || {}; S.flags['land_' + id] = true;
+  stat('land'); addXP(60);
+  return true;
+}
+const waterNear = (t, x, y) => {
+  const b = BUILD[t];
+  for (let i = -1; i <= b.w; i++) for (let j = -1; j <= b.h; j++) { const o = objAt(x + i, y + j); if (o && o.t === 'water') return true; }
+  return false;
+};
 // Buildings keep a one-square gap from other buildings so their pictures never crowd each other.
 // (Fields, paths, decorations and trees may sit right next to anything.)
 const BIG = new Set(['storage', 'producer', 'pen', 'house', 'civic', 'station']);
@@ -103,7 +131,9 @@ export function canPlace(t, x, y, ignore) {
   for (let i = 0; i < b.w; i++) for (let j = 0; j < b.h; j++) {
     const o = grid[(y + j) * MAP + x + i];
     if (o && o !== ignore) return false;
+    if (landLocked(x + i, y + j)) return false;
   }
+  if (b.kind === 'fishing' && !waterNear(t, x, y)) return false;
   if (isBig(t)) {
     for (let i = -1; i <= b.w; i++) for (let j = -1; j <= b.h; j++) {
       const o = objAt(x + i, y + j);
@@ -116,7 +146,8 @@ export function canPlace(t, x, y, ignore) {
 export function placeProblem(t, x, y, ignore) {
   const b = BUILD[t];
   if (x < 0 || y < 0 || x + b.w > MAP || y + b.h > MAP) return 'edge';
-  for (let i = 0; i < b.w; i++) for (let j = 0; j < b.h; j++) { const o = grid[(y + j) * MAP + x + i]; if (o && o !== ignore) return 'blocked'; }
+  for (let i = 0; i < b.w; i++) for (let j = 0; j < b.h; j++) { if (landLocked(x + i, y + j)) return 'locked'; const o = grid[(y + j) * MAP + x + i]; if (o && o !== ignore) return 'blocked'; }
+  if (b.kind === 'fishing' && !waterNear(t, x, y)) return 'water';
   return canPlace(t, x, y, ignore) ? null : 'crowded';
 }
 function initFor(t) {
@@ -125,6 +156,8 @@ function initFor(t) {
     case 'producer': return { jobs: [] };
     case 'pen': return { animals: [] };
     case 'house': return { last: now() };
+    case 'hive': return { last: now() };
+    case 'orchard': return { planted: now(), ready: now() + fruitGrow(BUILD[t].fruit) * 1000 };
     default: return {};
   }
 }
@@ -136,7 +169,7 @@ export function addObj(t, x, y, noRebuild) {
 }
 // Buildings can be moved once an hour; small things (fields, paths, decorations) move freely.
 export const MOVE_COOLDOWN = 60 * 60 * 1000;
-export const moveLimited = o => !['field', 'path', 'decor'].includes(BUILD[o.t].kind);
+export const moveLimited = o => !['field', 'path', 'decor', 'orchard', 'hive'].includes(BUILD[o.t].kind);
 export const moveReadyAt = o => (moveLimited(o) && o.movedAt ? o.movedAt + MOVE_COOLDOWN : 0);
 export function moveObj(o, x, y) {
   if (o.x === x && o.y === y) return; // put back where it was: no cooldown
@@ -199,7 +232,7 @@ export function plant(o, c) {
   if (S.level < cr.lvl) return 'locked';
   if (S.coins < cr.cost) return 'coins';
   S.coins -= cr.cost;
-  o.crop = c; o.start = now(); o.end = now() + cropTime(c) * 1000;
+  o.crop = c; o.start = now(); o.end = now() + cropTime(c) * beeBoost(o) * 1000;
   stat('plant');
   return 'ok';
 }
@@ -220,6 +253,57 @@ export function fertilize(o) {
   if (have('fertilizer') < 1) return 'none';
   takeAll({ fertilizer: 1 });
   o.end = now() + (o.end - now()) * 0.3;
+  return 'ok';
+}
+
+// ---------- Bees: hives fill with honey on their own, and fields within 2 squares grow 15% faster ----------
+export const HIVE_CAP = 3;
+export const hiveMs = () => 9 * 60000 * TIME_SCALE * perk('bea');
+export function beeBoost(o) {
+  for (const h of S.objs) if (h.t === 'beehive' && Math.abs(h.x - o.x) <= 2 && Math.abs(h.y - o.y) <= 2) return 0.85;
+  return 1;
+}
+export const honeyDue = o => Math.min(HIVE_CAP, Math.floor((now() - o.last) / hiveMs()));
+export const honeyNextAt = o => o.last + (honeyDue(o) + 1) * hiveMs();
+export function collectHoney(o) {
+  const n = honeyDue(o); if (!n) return 0;
+  if (!addItem('honey', n)) return 'full';
+  o.last = n >= HIVE_CAP ? now() : o.last + n * hiveMs();
+  addXP(3 * n); stat('make:honey', n); stat('animalGoods', n);
+  return n;
+}
+
+// ---------- Orchards: a tree grows once, then bears fruit again and again ----------
+export const fruitGrow = f => FRUIT[f].grow * 60 * TIME_SCALE * perk('joe');
+export const fruitRegrow = f => FRUIT[f].regrow * 60 * TIME_SCALE * perk('joe') * glassBoost();
+export const treeFruit = o => BUILD[o.t].fruit;
+export const treeReady = o => now() >= o.ready;
+export const treeMature = o => !!o.picks || treeReady(o);
+export function pickFruit(o) {
+  if (!treeReady(o)) return null;
+  const f = treeFruit(o), n = FRUIT[f].yield + (masteryBonus('crop', f) ? 1 : 0);
+  if (!addItem(f, n)) return 'full';
+  o.picks = (o.picks || 0) + 1; o.last = now();
+  o.ready = now() + fruitRegrow(f) * 1000;
+  addXP(FRUIT[f].xp); addMastery('crop', f);
+  stat('harvest'); stat('pick:' + f, n); stat('harvest:' + f, n);
+  return { fruit: f, n };
+}
+
+// ---------- Fishing: one worm bait per cast ----------
+export function castLine() {
+  if (have('bait') < 1) return null;
+  takeAll({ bait: 1 }); stat('cast');
+  const pool = Object.entries(FISH).filter(([, f]) => !f.lvl || S.level >= f.lvl);
+  const tot = pool.reduce((s, [, f]) => s + f.w, 0);
+  let r = Math.random() * tot, fish = pool[0][0];
+  for (const [k, f] of pool) { r -= f.w; if (r <= 0) { fish = k; break; } }
+  return { fish, window: FISH[fish].window, wait: 1.6 + Math.random() * 3.6 };
+}
+export function landFish(fish) {
+  if (!addItem(fish, 1)) return 'full';
+  addXP(fish === 'goldenCarp' ? 40 : 4 + Math.round(VALUE[fish] / 15));
+  stat('fish'); stat('fish:' + fish); stat('make:' + fish);
   return 'ok';
 }
 
@@ -362,6 +446,9 @@ function obtainable() {
     const b = BUILD[o.t];
     if (b.kind === 'producer') for (const r of RECIPES[o.t]) if (r.lvl <= S.level && !NO_ORDER.has(r.out)) set.add(r.out);
     if (b.kind === 'pen' && o.animals.length) set.add(penAnimal(o).product);
+    if (b.kind === 'orchard' && o.picks) set.add(b.fruit);
+    if (b.kind === 'hive') set.add('honey');
+    if (b.kind === 'fishing') { set.add('perch'); set.add('trout'); set.add('catfish'); }
   }
   return [...set];
 }
@@ -407,6 +494,8 @@ const ORDER_FOLK = {
   hattie: { name: 'The Mayor',       why: ['is hosting the town council', 'is welcoming a visiting dignitary', 'wants refreshments for the parade'] },
   finch:  { name: 'Mr. Finch',       why: ['is stocking the store shelves', 'has customers asking for it', 'is putting together gift baskets'] },
   ellis:  { name: 'Grandma Ellis',   why: ['is making a care basket for a sick neighbor', 'is cooking Sunday supper for the family', 'is knitting circle snack day'] },
+  bea:    { name: 'Bea the Beekeeper', why: ['is stocking her honey stall', 'is hosting a pollinator picnic', 'is trading with the next-valley beekeepers'] },
+  hank:   { name: 'Hank',            why: ['has the goat-show judges coming', 'is fixing up the old dairy barn', 'is feeding the shearing crew'] },
 };
 const WHY = ['wants something special for a birthday', 'is cooking for a family reunion', 'is setting up a stall at the Saturday market', 'is feeding the volunteer fire crew',
   'has guests arriving tonight', 'is planning a surprise for a neighbor', 'is stocking up before the weekend', 'is throwing a garden party'];
@@ -500,6 +589,7 @@ export function useHourglass(o) {
   } else if (b.kind === 'pen') {
     const busy = o.animals.filter(a => a.end > t); if (!busy.length) return false;
     busy.forEach(a => a.end = t);
+  } else if (b.kind === 'orchard' && o.ready > t) { o.ready = t;
   } else return false;
   S.hg--;
   return true;
@@ -518,7 +608,7 @@ export function newGame() {
   rebuildGrid();
   const r = rng(1789);
   const lo = 8, hi = 21;
-  for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) {
+  for (let y = 0; y < HOME_MAP; y++) for (let x = 0; x < HOME_MAP; x++) {
     if (objAt(x, y)) continue;
     const inside = x >= lo && x <= hi && y >= lo && y <= hi;
     const p = r();
@@ -529,9 +619,29 @@ export function newGame() {
     if ((x + y) % 30 === 0) rebuildGrid();
   }
   rebuildGrid();
+  genParcels();
   refreshOrders();
   return S;
 }
+// The land beyond the old farm: thick woods to clear, and the Pelham River cutting across Riverside.
+// Seeded so every farm gets the same land; added once to older saves (mapV 2).
+export function genParcels() {
+  if (S.mapV >= 2) return;
+  const r = rng(4242);
+  const river = new Set();
+  for (let y = 30; y < MAP; y++) for (let x = 30; x < MAP; x++) if (riverDist(x + 0.5, y + 0.5) < RIVER_W / 2 - 0.1) river.add(x * 100 + y);
+  for (const k of river) if (!objAt(Math.floor(k / 100), k % 100)) addObj('water', Math.floor(k / 100), k % 100, true);
+  rebuildGrid();
+  for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) {
+    if (x < HOME_MAP && y < HOME_MAP) continue;
+    if (objAt(x, y)) continue;
+    const edge = x >= MAP - 2 || y >= MAP - 2, p = r();
+    if (p < (edge ? 0.7 : 0.36)) addObj(r() < 0.74 ? 'tree' : 'rock', x, y, true);
+  }
+  S.mapV = 2;
+  rebuildGrid();
+}
+function migrate() { if (!S.mapV || S.mapV < 2) { rebuildGrid(); genParcels(); } }
 export function save() {
   if (!S) return;
   S.saved = now();
@@ -540,19 +650,19 @@ export function save() {
 export function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (s && s.v === 1) { S = s; S.settings = S.settings || { music: true, sfx: true }; rebuildGrid(); return true; }
+    if (s && s.v === 1) { S = s; S.settings = S.settings || { music: true, sfx: true }; rebuildGrid(); migrate(); return true; }
   } catch (e) { /* corrupt save */ }
   return false;
 }
 // replace the whole farm (used when loading the cloud copy)
 export function setState(s) {
   if (!s || s.v !== 1 || !Array.isArray(s.objs)) throw new Error('bad save');
-  S = s; S.settings = S.settings || { music: true, sfx: true }; rebuildGrid(); save();
+  S = s; S.settings = S.settings || { music: true, sfx: true }; rebuildGrid(); migrate(); save();
 }
 export function exportSave() { return btoa(unescape(encodeURIComponent(JSON.stringify(S)))); }
 export function importSave(str) {
   const s = JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
   if (!s || s.v !== 1 || !Array.isArray(s.objs)) throw new Error('bad save');
-  S = s; rebuildGrid(); save();
+  S = s; rebuildGrid(); migrate(); save();
 }
 export function resetGame() { try { localStorage.removeItem(KEY); } catch (e) {} newGame(); save(); }

@@ -72,24 +72,29 @@ export const KEEPSAKE_SETS = [
   { id: 'cats', name: "Ollie & Milo's Treasures", items: ['mouse', 'collar', 'sock', 'photo'], reward: { coins: 600, hg: 3 }, hint: 'The cats bring these when you pet them' },
   { id: 'oldtown', name: 'Old Pelham', items: ['watch', 'oldcoin', 'postcard', 'horseshoe'], reward: { coins: 900, hg: 4 }, hint: 'Turned up by clearing land and filling orders' },
   { id: 'wild', name: 'Wild Wonders', items: ['nest', 'honeycomb', 'arrowhead', 'shell'], reward: { coins: 1200, hg: 5 }, hint: 'Discovered out on expeditions' },
+  { id: 'river', name: 'River Treasures', items: ['bottle', 'pearl', 'lure', 'locket'], reward: { coins: 2500, hg: 8 }, hint: 'Hooked now and then while fishing' },
 ];
 export const KEEPSAKE_NAMES = { clover: 'Four-Leaf Clover', flower: 'Pressed Wildflower', feather: 'Speckled Feather', acorn: 'Shiny Acorn',
   mouse: 'Felt Toy Mouse', collar: 'Belled Collar', sock: 'Knitted Cat Toy', photo: 'Portrait of Ollie',
   watch: 'Silver Pocket Watch', oldcoin: 'Old Crown Coin', postcard: 'Vintage Postcard', horseshoe: 'Lucky Horseshoe',
-  nest: "Bird's Nest", honeycomb: 'Wild Honeycomb', arrowhead: 'Stone Arrowhead', shell: 'Spiral Seashell' };
-const SOURCE = { harvest: ['meadow', 0.025], pet: ['cats', 0.12], clear: ['oldtown', 0.08], deliver: ['oldtown', 0.04], explore: ['wild', 0.08] };
+  nest: "Bird's Nest", honeycomb: 'Wild Honeycomb', arrowhead: 'Stone Arrowhead', shell: 'Spiral Seashell',
+  bottle: 'Message in a Bottle', pearl: 'River Pearl', lure: 'Antique Fishing Lure', locket: "Great-Aunt May's Locket" };
+const SOURCE = { harvest: ['meadow', 0.025], pet: ['cats', 0.12], clear: ['oldtown', 0.08], deliver: ['oldtown', 0.04], explore: ['wild', 0.08], fish: ['river', 0.07] };
 const K = () => (G.S.keepsakes = G.S.keepsakes || { have: [], sets: [] });
 export const hasKeepsake = id => K().have.includes(id);
 // roll for a keepsake from this activity; returns the keepsake id if one was found
 export function rollKeepsake(source) {
   const s = SOURCE[source]; if (!s || G.S.level < 3) return null;
   const set = KEEPSAKE_SETS.find(x => x.id === s[0]);
-  const missing = set.items.filter(i => !hasKeepsake(i));
+  // May's locket only turns up once Grandma Ellis asks about it (see the 'locket' quest)
+  const missing = set.items.filter(i => !hasKeepsake(i) && i !== 'locket');
   if (!missing.length || Math.random() > s[1]) return null;
   const id = missing[Math.floor(Math.random() * missing.length)];
   K().have.push(id); G.stat('keepsake');
   return id;
 }
+// a specific keepsake, handed over by the story
+export function giveKeepsake(id) { if (hasKeepsake(id)) return null; K().have.push(id); G.stat('keepsake'); return id; }
 export const setComplete = set => set.items.every(hasKeepsake);
 export const setClaimed = set => K().sets.includes(set.id);
 export function claimSet(set) {

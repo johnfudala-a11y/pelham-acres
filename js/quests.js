@@ -41,6 +41,8 @@ export function goalProgress(q, g) {
     case 'own': return Math.min(g.n, G.count(g.id));
     case 'animals': { let n = 0; for (const o of G.S.objs) if (o.animals && o.t && n < 99) { const pa = G.penAnimal(o); if (pa && pa.name.toLowerCase() === g.id) n += o.animals.length; } return Math.min(g.n, n); }
     case 'level': return Math.min(g.n, G.S.level);
+    case 'flag': return hasFlag(g.id) || (g.id.startsWith('land_') && G.S.land && G.S.land[g.id.slice(5)]) ? g.n : 0;
+    case 'keepsake': return G.S.keepsakes && G.S.keepsakes.have.includes(g.id) ? g.n : 0;
   }
   return 0;
 }
